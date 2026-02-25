@@ -35,6 +35,9 @@ license = {file = "LICENSE"}
 name = "openptv-python"
 readme = "README.md"
 
+[project.optional-dependencies]
+marimo = ["marimo"]  # pip install .[marimo]
+
 [tool.coverage.run]
 branch = true
 
