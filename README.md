@@ -28,7 +28,7 @@ conda activate openptv-python
 
 Before pushing to GitHub, run the following commands:
 
-1. Update conda environment: `make conda-env-update` or `uv venv` and `source .venv/bin/activate` followed by `uv sync`
+1. Update conda environment: `make conda-env-update` or `uv venv` and `source .venv/bin/activate` followed by `uv sync --upgrade`
 1. Install this package: `pip install -e .`
 1. Sync with the latest [template](https://github.com/ecmwf-projects/cookiecutter-conda-package) (optional): `make template-update`
 1. Run quality assurance checks: `make qa`

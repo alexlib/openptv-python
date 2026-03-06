@@ -1,6 +1,6 @@
 """Functions for the orientation of the camera."""
 
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import scipy
@@ -18,7 +18,7 @@ from .parameters import ControlPar, MultimediaPar, OrientPar, VolumePar
 from .ray_tracing import ray_tracing
 from .sortgrid import sortgrid
 from .tracking_frame_buf import Target
-from .trafo import correct_brown_affine, pixel_to_metric
+from .trafo import correct_brown_affine, dist_to_flat, metric_to_pixel, pixel_to_metric
 from .vec_utils import unit_vector, vec_norm, vec_set
 
 
@@ -1060,6 +1060,425 @@ def multi_cam_point_positions(
     rcm = np.empty(num_targets)
 
     for pt in range(num_targets):
-        rcm[pt], res = point_position(targets[pt], num_cams, mm_par, cals)
+        rcm[pt], res[pt] = point_position(targets[pt], num_cams, mm_par, cals)
 
     return res, rcm
+
+
+def _clone_calibration(cal: Calibration) -> Calibration:
+    """Create an isolated calibration copy for optimization updates."""
+    return Calibration(
+        ext_par=cal.ext_par.copy(),
+        int_par=cal.int_par.copy(),
+        glass_par=cal.glass_par.copy(),
+        added_par=cal.added_par.copy(),
+        mmlut=cal.mmlut,
+        mmlut_data=cal.mmlut_data,
+    )
+
+
+def _bundle_optional_parameter_names(orient_par: OrientPar) -> List[str]:
+    """Return optional calibration parameter names enabled for optimization."""
+    names = []
+    mapping = (
+        ("ccflag", "cc"),
+        ("xhflag", "xh"),
+        ("yhflag", "yh"),
+        ("k1flag", "k1"),
+        ("k2flag", "k2"),
+        ("k3flag", "k3"),
+        ("p1flag", "p1"),
+        ("p2flag", "p2"),
+        ("scxflag", "scx"),
+        ("sheflag", "she"),
+    )
+    for flag_name, param_name in mapping:
+        if getattr(orient_par, flag_name):
+            names.append(param_name)
+    return names
+
+
+def _get_optional_parameter(cal: Calibration, name: str) -> float:
+    """Read one optional calibration parameter from a camera model."""
+    if name == "cc":
+        return float(cal.int_par.cc)
+    if name == "xh":
+        return float(cal.int_par.xh)
+    if name == "yh":
+        return float(cal.int_par.yh)
+
+    added_map = {
+        "k1": 0,
+        "k2": 1,
+        "k3": 2,
+        "p1": 3,
+        "p2": 4,
+        "scx": 5,
+        "she": 6,
+    }
+    if name not in added_map:
+        raise ValueError(f"Unknown optional camera parameter: {name}")
+    return float(cal.added_par[added_map[name]])
+
+
+def _set_optional_parameter(cal: Calibration, name: str, value: float) -> None:
+    """Write one optional calibration parameter into a camera model."""
+    if name == "cc":
+        cal.int_par.cc = value
+        return
+    if name == "xh":
+        cal.int_par.xh = value
+        return
+    if name == "yh":
+        cal.int_par.yh = value
+        return
+
+    added_map = {
+        "k1": 0,
+        "k2": 1,
+        "k3": 2,
+        "p1": 3,
+        "p2": 4,
+        "scx": 5,
+        "she": 6,
+    }
+    if name not in added_map:
+        raise ValueError(f"Unknown optional camera parameter: {name}")
+    cal.added_par[added_map[name]] = value
+
+
+def _glass_basis(glass_vec: np.ndarray) -> Tuple[np.ndarray, np.ndarray, float]:
+    """Build a stable tangent basis around the current glass vector."""
+    norm = float(np.linalg.norm(glass_vec))
+    if norm == 0.0:
+        raise ValueError("Glass vector norm must be non-zero")
+
+    normal = glass_vec / norm
+    helper = (
+        np.array([1.0, 0.0, 0.0]) if abs(normal[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
+    )
+    e1 = np.cross(normal, helper)
+    e1_norm = float(np.linalg.norm(e1))
+    if e1_norm == 0.0:
+        helper = np.array([0.0, 0.0, 1.0])
+        e1 = np.cross(normal, helper)
+        e1_norm = float(np.linalg.norm(e1))
+    e1 /= e1_norm
+    e2 = np.cross(normal, e1)
+    e2 /= float(np.linalg.norm(e2))
+    return e1, e2, norm
+
+
+def _camera_parameter_block(
+    cal: Calibration, optional_names: List[str], include_interface: bool
+) -> np.ndarray:
+    """Pack one camera block for bundle adjustment."""
+    values = [
+        float(cal.ext_par.x0),
+        float(cal.ext_par.y0),
+        float(cal.ext_par.z0),
+        float(cal.ext_par.omega),
+        float(cal.ext_par.phi),
+        float(cal.ext_par.kappa),
+    ]
+    values.extend(_get_optional_parameter(cal, name) for name in optional_names)
+    if include_interface:
+        values.extend([0.0, 0.0])
+    return np.asarray(values, dtype=np.float64)
+
+
+def _apply_camera_parameter_block(
+    cal: Calibration,
+    block: np.ndarray,
+    optional_names: List[str],
+    include_interface: bool,
+    base_glass: Optional[np.ndarray],
+) -> None:
+    """Apply one bundle-adjustment camera block to a calibration object."""
+    cal.set_pos(block[:3])
+    cal.set_angles(block[3:6])
+
+    offset = 6
+    for name in optional_names:
+        _set_optional_parameter(cal, name, float(block[offset]))
+        offset += 1
+
+    if include_interface:
+        if base_glass is None:
+            raise ValueError("Base glass vector is required when interfflag is enabled")
+        e1, e2, scale = _glass_basis(base_glass)
+        cal.glass_par = base_glass + scale * (
+            block[offset] * e1 + block[offset + 1] * e2
+        )
+
+
+def metric_observations_from_pixels(
+    observed_pixels: np.ndarray,
+    cals: List[Calibration],
+    cpar: ControlPar,
+) -> np.ndarray:
+    """Convert pixel observations to flat metric coordinates for ray intersection."""
+    num_points, num_cams, _ = observed_pixels.shape
+    metric_obs = np.full((num_points, num_cams, 2), COORD_UNUSED, dtype=np.float64)
+
+    for pt in range(num_points):
+        for cam in range(num_cams):
+            obs = observed_pixels[pt, cam]
+            if not np.all(np.isfinite(obs)):
+                continue
+            x_metric, y_metric = pixel_to_metric(float(obs[0]), float(obs[1]), cpar)
+            metric_obs[pt, cam] = dist_to_flat(x_metric, y_metric, cals[cam])
+
+    return metric_obs
+
+
+def initialize_bundle_adjustment_points(
+    observed_pixels: np.ndarray,
+    cals: List[Calibration],
+    cpar: ControlPar,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Triangulate 3D starting points from pixel observations and current cameras."""
+    metric_obs = metric_observations_from_pixels(observed_pixels, cals, cpar)
+    num_points, num_cams, _ = metric_obs.shape
+    points = np.empty((num_points, 3), dtype=np.float64)
+    ray_convergence = np.empty(num_points, dtype=np.float64)
+
+    for pt in range(num_points):
+        if np.count_nonzero(metric_obs[pt, :, 0] != COORD_UNUSED) < 2:
+            raise ValueError(
+                "Each point must be observed by at least two cameras for bundle adjustment"
+            )
+        ray_convergence[pt], points[pt] = point_position(
+            metric_obs[pt], num_cams, cpar.mm, cals
+        )
+
+    return points, ray_convergence
+
+
+def reprojection_errors(
+    observed_pixels: np.ndarray,
+    points_3d: np.ndarray,
+    cals: List[Calibration],
+    cpar: ControlPar,
+) -> np.ndarray:
+    """Return per-observation reprojection errors in pixels."""
+    if observed_pixels.ndim != 3 or observed_pixels.shape[2] != 2:
+        raise ValueError("observed_pixels must have shape (num_points, num_cams, 2)")
+    if points_3d.shape != (observed_pixels.shape[0], 3):
+        raise ValueError("points_3d must have shape (num_points, 3)")
+    if observed_pixels.shape[1] != len(cals):
+        raise ValueError(
+            "Number of cameras in observations and calibrations must match"
+        )
+
+    residuals = np.full_like(observed_pixels, np.nan, dtype=np.float64)
+    for pt in range(observed_pixels.shape[0]):
+        for cam in range(observed_pixels.shape[1]):
+            obs = observed_pixels[pt, cam]
+            if not np.all(np.isfinite(obs)):
+                continue
+            x_metric, y_metric = img_coord(points_3d[pt], cals[cam], cpar.mm)
+            proj = metric_to_pixel(x_metric, y_metric, cpar)
+            residuals[pt, cam] = np.asarray(proj, dtype=np.float64) - obs
+
+    return residuals
+
+
+def reprojection_rms(
+    observed_pixels: np.ndarray,
+    points_3d: np.ndarray,
+    cals: List[Calibration],
+    cpar: ControlPar,
+) -> float:
+    """Return the global RMS reprojection error in pixels."""
+    residuals = reprojection_errors(observed_pixels, points_3d, cals, cpar)
+    valid = np.isfinite(residuals)
+    if not np.any(valid):
+        raise ValueError("No valid observations available for reprojection RMS")
+    return float(np.sqrt(np.mean(np.square(residuals[valid]))))
+
+
+def reprojection_rms_per_camera(
+    observed_pixels: np.ndarray,
+    points_3d: np.ndarray,
+    cals: List[Calibration],
+    cpar: ControlPar,
+) -> np.ndarray:
+    """Return per-camera RMS reprojection errors in pixels."""
+    residuals = reprojection_errors(observed_pixels, points_3d, cals, cpar)
+    per_camera = np.full(observed_pixels.shape[1], np.nan, dtype=np.float64)
+    for cam in range(observed_pixels.shape[1]):
+        valid = np.isfinite(residuals[:, cam, :])
+        if np.any(valid):
+            per_camera[cam] = float(
+                np.sqrt(np.mean(np.square(residuals[:, cam, :][valid])))
+            )
+    return per_camera
+
+
+def multi_camera_bundle_adjustment(
+    observed_pixels: np.ndarray,
+    cals: List[Calibration],
+    cpar: ControlPar,
+    orient_par: OrientPar,
+    point_init: Optional[np.ndarray] = None,
+    fix_first_camera: bool = True,
+    fixed_camera_indices: Optional[List[int]] = None,
+    loss: str = "soft_l1",
+    f_scale: float = 1.0,
+    method: str = "trf",
+    prior_sigmas: Optional[Dict[str, float]] = None,
+    max_nfev: Optional[int] = None,
+) -> Tuple[List[Calibration], np.ndarray, scipy.optimize.OptimizeResult]:
+    """Jointly refine multi-camera calibration and 3D points by reprojection error."""
+    observed_pixels = np.asarray(observed_pixels, dtype=np.float64)
+    if observed_pixels.ndim != 3 or observed_pixels.shape[2] != 2:
+        raise ValueError("observed_pixels must have shape (num_points, num_cams, 2)")
+    if len(cals) < 2:
+        raise ValueError("Bundle adjustment requires at least two cameras")
+    if observed_pixels.shape[1] != len(cals):
+        raise ValueError(
+            "Number of cameras in observations and calibrations must match"
+        )
+
+    num_points, num_cams, _ = observed_pixels.shape
+    if num_points == 0:
+        raise ValueError("At least one 3D point is required for bundle adjustment")
+
+    obs_counts = np.count_nonzero(np.all(np.isfinite(observed_pixels), axis=2), axis=1)
+    if np.any(obs_counts < 2):
+        raise ValueError("Each point must be observed by at least two cameras")
+
+    base_cals = [_clone_calibration(cal) for cal in cals]
+    optional_names = _bundle_optional_parameter_names(orient_par)
+    include_interface = bool(orient_par.interfflag)
+    prior_sigmas = {} if prior_sigmas is None else prior_sigmas
+
+    if fixed_camera_indices is None:
+        fixed_camera_indices = [0] if fix_first_camera else []
+
+    fixed_camera_indices = sorted(set(fixed_camera_indices))
+    if any(cam < 0 or cam >= num_cams for cam in fixed_camera_indices):
+        raise ValueError("fixed_camera_indices contains an out-of-range camera index")
+
+    optimized_cam_indices = [
+        cam for cam in range(num_cams) if cam not in fixed_camera_indices
+    ]
+
+    # Refining both 3D points and camera poses from image observations has a similarity
+    # gauge. One fixed camera removes global translation/rotation, but scale still drifts
+    # unless another camera is fixed or translation priors are applied.
+    has_translation_priors = all(
+        prior_sigmas.get(name, 0) > 0 for name in ("x0", "y0", "z0")
+    )
+    if optimized_cam_indices and len(fixed_camera_indices) < 2 and not has_translation_priors:
+        raise ValueError(
+            "Bundle adjustment with free 3D points and only one fixed camera is scale-ambiguous. "
+            "Fix at least two cameras via fixed_camera_indices or provide translation priors "
+            "for x0, y0, and z0."
+        )
+
+    if point_init is None:
+        points0, _ = initialize_bundle_adjustment_points(
+            observed_pixels, base_cals, cpar
+        )
+    else:
+        points0 = np.asarray(point_init, dtype=np.float64)
+        if points0.shape != (num_points, 3):
+            raise ValueError("point_init must have shape (num_points, 3)")
+
+    base_camera_blocks = []
+    base_glass_vectors: Dict[int, np.ndarray] = {}
+    parameter_names = ["x0", "y0", "z0", "omega", "phi", "kappa"] + optional_names
+    if include_interface:
+        parameter_names.extend(["glass_e1", "glass_e2"])
+
+    initial_blocks = []
+    for cam in optimized_cam_indices:
+        initial_block = _camera_parameter_block(
+            base_cals[cam], optional_names, include_interface
+        )
+        initial_blocks.append(initial_block)
+        base_camera_blocks.append(initial_block.copy())
+        if include_interface:
+            base_glass_vectors[cam] = base_cals[cam].glass_par.copy()
+
+    if initial_blocks:
+        x0 = np.concatenate(initial_blocks + [points0.ravel()])
+    else:
+        x0 = points0.ravel().copy()
+
+    camera_block_size = 6 + len(optional_names) + (2 if include_interface else 0)
+    point_offset = camera_block_size * len(optimized_cam_indices)
+
+    def unpack_parameters(params: np.ndarray) -> Tuple[List[Calibration], np.ndarray]:
+        trial_cals = [_clone_calibration(cal) for cal in base_cals]
+        offset = 0
+        for cam in optimized_cam_indices:
+            block = params[offset : offset + camera_block_size]
+            _apply_camera_parameter_block(
+                trial_cals[cam],
+                block,
+                optional_names,
+                include_interface,
+                base_glass_vectors.get(cam),
+            )
+            offset += camera_block_size
+
+        points = params[point_offset:].reshape(num_points, 3)
+        return trial_cals, points
+
+    def residual_vector(params: np.ndarray) -> np.ndarray:
+        trial_cals, points = unpack_parameters(params)
+        residuals = []
+        for pt in range(num_points):
+            for cam in range(num_cams):
+                obs = observed_pixels[pt, cam]
+                if not np.all(np.isfinite(obs)):
+                    continue
+                x_metric, y_metric = img_coord(points[pt], trial_cals[cam], cpar.mm)
+                proj_x, proj_y = metric_to_pixel(x_metric, y_metric, cpar)
+                residuals.append((proj_x - obs[0]) / cpar.pix_x)
+                residuals.append((proj_y - obs[1]) / cpar.pix_y)
+
+        if prior_sigmas:
+            offset = 0
+            for cam_index, cam in enumerate(optimized_cam_indices):
+                block = params[offset : offset + camera_block_size]
+                base_block = base_camera_blocks[cam_index]
+                for name, value, base_value in zip(parameter_names, block, base_block):
+                    sigma = prior_sigmas.get(name)
+                    if sigma is None or sigma <= 0:
+                        continue
+                    residuals.append((value - base_value) / sigma)
+                offset += camera_block_size
+
+        return np.asarray(residuals, dtype=np.float64)
+
+    initial_cals, initial_points = unpack_parameters(x0)
+    initial_rms = reprojection_rms(observed_pixels, initial_points, initial_cals, cpar)
+    initial_per_camera = reprojection_rms_per_camera(
+        observed_pixels, initial_points, initial_cals, cpar
+    )
+
+    result = scipy.optimize.least_squares(
+        residual_vector,
+        x0,
+        method=method,
+        loss=loss,
+        f_scale=f_scale,
+        max_nfev=max_nfev,
+    )
+
+    refined_cals, refined_points = unpack_parameters(result.x)
+    result["initial_reprojection_rms"] = initial_rms
+    result["final_reprojection_rms"] = reprojection_rms(
+        observed_pixels, refined_points, refined_cals, cpar
+    )
+    result["initial_reprojection_rms_per_camera"] = initial_per_camera
+    result["final_reprojection_rms_per_camera"] = reprojection_rms_per_camera(
+        observed_pixels, refined_points, refined_cals, cpar
+    )
+    result["optimized_camera_indices"] = optimized_cam_indices
+
+    return refined_cals, refined_points, result
