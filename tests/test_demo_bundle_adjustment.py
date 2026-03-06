@@ -13,6 +13,7 @@ from openptv_python.demo_bundle_adjustment import (
     format_quadruplet_sensitivity,
     load_calibrations,
     load_reference_geometry_points,
+    normalize_staged_release_order,
     perturb_calibrations,
     summarize_epipolar_consistency,
     summarize_fixed_camera_diagnostics,
@@ -39,6 +40,7 @@ class TestBundleAdjustmentDemo(unittest.TestCase):
         known_points = {0: np.array([0.0, 0.0, 0.0]), 5: np.array([1.0, 2.0, 3.0])}
 
         experiments = default_experiments(
+            num_cams=4,
             known_points=known_points,
             known_point_sigmas=0.25,
         )
@@ -47,6 +49,8 @@ class TestBundleAdjustmentDemo(unittest.TestCase):
         self.assertIn("intrinsics_only", names)
         self.assertIn("pose_trf_known_points", names)
         self.assertIn("guarded_two_step_known_points", names)
+        self.assertIn("guarded_stagewise_release", names)
+        self.assertIn("guarded_stagewise_release_known_points", names)
 
         intrinsics_only = next(
             spec for spec in experiments if spec.name == "intrinsics_only"
@@ -69,26 +73,72 @@ class TestBundleAdjustmentDemo(unittest.TestCase):
             for spec in experiments
             if spec.name == "guarded_two_step_known_points"
         )
+        staged_spec = next(
+            spec
+            for spec in experiments
+            if spec.name == "guarded_stagewise_release"
+        )
+        staged_known_spec = next(
+            spec
+            for spec in experiments
+            if spec.name == "guarded_stagewise_release_known_points"
+        )
         self.assertIs(pose_spec.ba_kwargs["known_points"], known_points)
         self.assertEqual(pose_spec.ba_kwargs["known_point_sigmas"], 0.25)
         self.assertIs(guarded_spec.ba_kwargs["known_points"], known_points)
         self.assertEqual(guarded_spec.ba_kwargs["known_point_sigmas"], 0.25)
+        self.assertEqual(staged_spec.ba_kwargs["fixed_camera_indices"], [1, 2, 3])
+        self.assertEqual(staged_spec.ba_kwargs["pose_release_camera_order"], [0, 1, 2, 3])
+        self.assertEqual(staged_spec.ba_kwargs["pose_stage_ray_slack"], 0.0)
+        self.assertIs(staged_known_spec.ba_kwargs["known_points"], known_points)
+        self.assertEqual(staged_known_spec.ba_kwargs["known_point_sigmas"], 0.25)
         self.assertEqual(guarded_spec.ba_kwargs["geometry_guard_mode"], "off")
         self.assertIsNone(guarded_spec.ba_kwargs["geometry_guard_threshold"])
+        self.assertEqual(guarded_spec.ba_kwargs["correspondence_guard_mode"], "off")
+        self.assertIsNone(guarded_spec.ba_kwargs["correspondence_guard_threshold"])
+        self.assertIsNone(guarded_spec.ba_kwargs["correspondence_guard_reference_rate"])
 
     def test_default_experiments_accepts_geometry_guard_configuration(self):
         experiments = default_experiments(
+            num_cams=4,
             perturbation_scale=1.0,
+            staged_release_order=[2, 0, 1, 3],
+            pose_stage_ray_slack=0.002,
             geometry_guard_mode="hard",
             geometry_guard_threshold=2.5,
+            correspondence_guard_mode="hard",
+            correspondence_guard_threshold=0.18,
+            correspondence_guard_reference_rate=0.15625,
         )
 
         guarded_spec = next(
             spec for spec in experiments if spec.name == "guarded_two_step"
         )
+        staged_spec = next(
+            spec for spec in experiments if spec.name == "guarded_stagewise_release"
+        )
 
         self.assertEqual(guarded_spec.ba_kwargs["geometry_guard_mode"], "hard")
         self.assertEqual(guarded_spec.ba_kwargs["geometry_guard_threshold"], 2.5)
+        self.assertEqual(guarded_spec.ba_kwargs["correspondence_guard_mode"], "hard")
+        self.assertEqual(guarded_spec.ba_kwargs["correspondence_guard_threshold"], 0.18)
+        self.assertEqual(
+            guarded_spec.ba_kwargs["correspondence_guard_reference_rate"],
+            0.15625,
+        )
+        self.assertEqual(staged_spec.ba_kwargs["pose_release_camera_order"], [2, 0, 1, 3])
+        self.assertEqual(staged_spec.ba_kwargs["fixed_camera_indices"], [0, 1, 3])
+        self.assertEqual(staged_spec.ba_kwargs["pose_stage_ray_slack"], 0.002)
+
+    def test_normalize_staged_release_order_validates_camera_permutation(self):
+        self.assertEqual(normalize_staged_release_order(None, 4), [0, 1, 2, 3])
+        self.assertEqual(normalize_staged_release_order([2, 0, 1, 3], 4), [2, 0, 1, 3])
+
+        with self.assertRaises(ValueError):
+            normalize_staged_release_order([0, 1, 1, 3], 4)
+
+        with self.assertRaises(ValueError):
+            normalize_staged_release_order([0, 1, 2], 4)
 
     def test_pose_demo_keeps_fixed_cameras_on_reference_geometry(self):
         cavity_dir = Path("tests/testing_fodder/test_cavity")

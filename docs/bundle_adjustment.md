@@ -126,6 +126,7 @@ The current routines report and the demo prints:
 1. `initial_reprojection_rms` and `final_reprojection_rms`.
 1. Per-camera reprojection RMS for `multi_camera_bundle_adjustment`.
 1. `baseline_mean_ray_convergence`, `pose_mean_ray_convergence`, and `final_mean_ray_convergence` for guarded runs.
+1. `baseline_correspondence_rate`, `pose_correspondence_rate`, and `intrinsic_correspondence_rate` for guarded runs when original quadruplet identities are available.
 1. Runtime in seconds for each experiment.
 1. `known_point_indices` for constrained runs in `multi_camera_bundle_adjustment`.
 
@@ -165,6 +166,9 @@ The command-line options are:
 1. `--geometry-guard-mode {auto,off,soft,hard}`: control whether guarded two-step BA rejects stages that move a known 3D calibration target too far from a trusted reference calibration. `auto` enables `hard` when `parameters/cal_ori.par` points to a known 3D target file such as `cal/target_on_a_side.txt`.
 1. `--geometry-guard-threshold S`: pixel threshold used by `hard` geometry guards.
 1. `--geometry-export-threshold S`: refuse to write output case folders whose final calibration-body drift exceeds `S` pixels. Use `0` to disable export blocking.
+1. `--correspondence-guard-mode {auto,off,soft,hard}`: control whether guarded two-step BA rejects stages that replace too many original quadruplet target identities after reprojection and nearest-target reassignment. `auto` derives a threshold from the trusted reference calibration when tracking data is available.
+1. `--correspondence-guard-threshold S`: replacement-rate threshold used by `hard` correspondence guards.
+1. `--correspondence-export-threshold S`: refuse to write output case folders whose final correspondence replacement rate exceeds `S`. Use `0` to disable correspondence-based export blocking.
 
 ### Included Demo Presets
 
@@ -181,6 +185,12 @@ When a case exposes known 3D calibration-target points through `cal_ori.par`, th
 1. Guarded presets use a `hard` acceptance check against the known target projections.
 1. Output case folders are written only if the final calibration stays within the configured export drift threshold.
 1. Cases without a known 3D target file still run normally; the geometry guard simply stays off unless you explicitly enable it another way.
+
+When a case also exposes original tracked quadruplets and per-camera target files, the demo adds a correspondence-preserving workflow on top:
+
+1. Guarded presets can compare original target identities with the identities implied by the refined calibration.
+1. `auto` correspondence mode derives a threshold from the trusted reference calibration and rejects later stages that replace materially more quadruplets than that reference already does.
+1. Output case folders are skipped if the final replacement rate exceeds the configured correspondence export threshold.
 
 If `--known-points` is greater than zero, the demo also compares two constrained presets:
 
@@ -234,6 +244,17 @@ python -m openptv_python.demo_bundle_adjustment \
   --geometry-guard-mode soft \
   --geometry-export-threshold 2.5 \
   --output-dir .tmp/demo_bundle_adjustment_runs_soft
+```
+
+Keep geometry blocking but also enforce a hard correspondence replacement limit derived from the trusted reference calibration:
+
+```bash
+python -m openptv_python.demo_bundle_adjustment \
+  tests/testing_fodder/test_cavity \
+  --max-frames 2 \
+  --max-points-per-frame 80 \
+  --correspondence-guard-mode auto \
+  --output-dir .tmp/demo_bundle_adjustment_runs_correspondence
 ```
 
 Run without writing calibration folders:
@@ -290,11 +311,14 @@ tmp/bundle_adjustment_demo/
       ...
     calibration_delta.txt
     geometry_check.txt
+    correspondence_check.txt
 ```
 
 `calibration_delta.txt` is generated with `openptv_python.calibration_compare` and shows camera-by-camera parameter differences relative to the source case.
 
 `geometry_check.txt` reports per-camera drift of the known 3D calibration-body projections relative to the trusted reference calibration. If the final drift exceeds `--geometry-export-threshold`, the demo does not write that experiment's case folder at all.
+
+`correspondence_check.txt` reports how many original quadruplet target identities are replaced by the refined calibration after nearest-target reassignment. If the final replacement rate exceeds `--correspondence-export-threshold`, the demo does not write that experiment's case folder at all.
 
 ## Choosing Options
 
@@ -352,6 +376,8 @@ This split is useful because the two diagnostics answer different questions:
 1. Reprojection RMS asks whether the final 3D points and cameras explain the full observation set.
 
 If epipolar distance stays bad while reprojection improves, the next step is usually not to add an epipolar term blindly. First identify whether a subset of camera pairs or quadruplets is driving the inconsistency, then decide whether to reject or downweight those observations.
+
+The correspondence guard is aimed at a related failure mode: a calibration can reduce RMS by drifting until many refined projections land closer to different detected targets than the original quadruplet used. In that case, the solution is numerically fitting the images better while no longer preserving the same tracked structure. The new replacement-rate check gives you an explicit acceptance and export criterion for that situation.
 
 ### Priors and Bounds
 

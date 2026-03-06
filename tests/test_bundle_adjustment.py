@@ -644,6 +644,162 @@ class TestBundleAdjustment(unittest.TestCase):
             self.assertEqual(call.kwargs["known_points"], known_points)
             self.assertEqual(call.kwargs["known_point_sigmas"], 1e-3)
 
+    def test_guarded_two_step_bundle_adjustment_supports_staged_camera_release(self):
+        points = np.array(
+            [
+                [-10.0, -10.0, 0.0],
+                [10.0, -10.0, 1.0],
+                [-10.0, 10.0, -1.0],
+                [10.0, 10.0, 0.5],
+            ],
+            dtype=float,
+        )
+        observed_pixels = np.empty((len(points), 4, 2), dtype=float)
+        for cam_num, cal in enumerate(self.true_cals):
+            observed_pixels[:, cam_num, :] = arr_metric_to_pixel(
+                image_coordinates(points, cal, self.control.mm), self.control
+            )
+
+        start_cals = self.lightly_perturb_calibrations(self.true_cals)
+        intrinsics = OrientPar()
+        intrinsics.k1flag = 1
+        intrinsics.p1flag = 1
+        intrinsics.p2flag = 1
+
+        staged_returns = [
+            (self.true_cals, points.copy(), {"success": True, "stage": f"pose_{idx}"})
+            for idx in range(4)
+        ] + [
+            (self.true_cals, points.copy(), {"success": True, "stage": "intrinsics"})
+        ]
+
+        with patch(
+            "openptv_python.orientation.multi_camera_bundle_adjustment",
+            side_effect=staged_returns,
+        ) as mocked_adjustment, patch(
+            "openptv_python.orientation.reprojection_rms",
+            side_effect=[10.0, 9.0, 8.0, 7.0, 6.0, 5.0],
+        ), patch(
+            "openptv_python.orientation.mean_ray_convergence",
+            side_effect=[6.0, 5.0, 4.0, 3.0, 2.0, 1.0],
+        ):
+            _, final_points, summary = guarded_two_step_bundle_adjustment(
+                observed_pixels,
+                start_cals,
+                self.control,
+                OrientPar(),
+                intrinsics,
+                point_init=points,
+                pose_release_camera_order=[0, 1, 2, 3],
+                pose_prior_sigmas={
+                    "x0": 0.5,
+                    "y0": 0.5,
+                    "z0": 0.5,
+                    "omega": 0.005,
+                    "phi": 0.005,
+                    "kappa": 0.005,
+                },
+                pose_parameter_bounds={
+                    "x0": (-2.0, 2.0),
+                    "y0": (-2.0, 2.0),
+                    "z0": (-2.0, 2.0),
+                    "omega": (-0.02, 0.02),
+                    "phi": (-0.02, 0.02),
+                    "kappa": (-0.02, 0.02),
+                },
+                pose_max_nfev=20,
+                intrinsic_max_nfev=10,
+            )
+
+        self.assertEqual(mocked_adjustment.call_count, 5)
+        fixed_sequences = [
+            call.kwargs.get("fixed_camera_indices")
+            for call in mocked_adjustment.call_args_list
+        ]
+        self.assertEqual(
+            fixed_sequences,
+            [[1, 2, 3], [2, 3], [3], [], [0, 1, 2, 3]],
+        )
+        self.assertEqual(summary["pose_release_camera_order"], [0, 1, 2, 3])
+        self.assertEqual(summary["accepted_pose_stage_count"], 4)
+        self.assertEqual(summary["accepted_stage"], "intrinsics")
+        self.assertEqual(len(summary["pose_stage_summaries"]), 4)
+        self.assertEqual(
+            [stage["released_camera_index"] for stage in summary["pose_stage_summaries"]],
+            [0, 1, 2, 3],
+        )
+        self.assertEqual(final_points.shape, points.shape)
+
+    def test_guarded_two_step_bundle_adjustment_stagewise_ray_slack_allows_near_miss(self):
+        points = np.array(
+            [
+                [-10.0, -10.0, 0.0],
+                [10.0, -10.0, 1.0],
+                [-10.0, 10.0, -1.0],
+                [10.0, 10.0, 0.5],
+            ],
+            dtype=float,
+        )
+        observed_pixels = np.empty((len(points), 4, 2), dtype=float)
+        for cam_num, cal in enumerate(self.true_cals):
+            observed_pixels[:, cam_num, :] = arr_metric_to_pixel(
+                image_coordinates(points, cal, self.control.mm), self.control
+            )
+
+        start_cals = self.lightly_perturb_calibrations(self.true_cals)
+        intrinsics = OrientPar()
+        intrinsics.k1flag = 1
+        intrinsics.p1flag = 1
+        intrinsics.p2flag = 1
+
+        staged_returns = [
+            (self.true_cals, points.copy(), {"success": True, "stage": f"pose_{idx}"})
+            for idx in range(4)
+        ] + [
+            (self.true_cals, points.copy(), {"success": True, "stage": "intrinsics"})
+        ]
+
+        with patch(
+            "openptv_python.orientation.multi_camera_bundle_adjustment",
+            side_effect=staged_returns,
+        ), patch(
+            "openptv_python.orientation.reprojection_rms",
+            side_effect=[10.0, 9.0, 8.0, 7.0, 6.0, 5.5],
+        ), patch(
+            "openptv_python.orientation.mean_ray_convergence",
+            side_effect=[6.0, 5.0, 4.0, 4.0005, 3.5, 3.4],
+        ):
+            _, _, summary = guarded_two_step_bundle_adjustment(
+                observed_pixels,
+                start_cals,
+                self.control,
+                OrientPar(),
+                intrinsics,
+                point_init=points,
+                pose_release_camera_order=[0, 1, 2, 3],
+                pose_stage_ray_slack=1e-3,
+                pose_prior_sigmas={
+                    "x0": 0.5,
+                    "y0": 0.5,
+                    "z0": 0.5,
+                    "omega": 0.005,
+                    "phi": 0.005,
+                    "kappa": 0.005,
+                },
+                pose_parameter_bounds={
+                    "x0": (-2.0, 2.0),
+                    "y0": (-2.0, 2.0),
+                    "z0": (-2.0, 2.0),
+                    "omega": (-0.02, 0.02),
+                    "phi": (-0.02, 0.02),
+                    "kappa": (-0.02, 0.02),
+                },
+            )
+
+        self.assertEqual(summary["accepted_pose_stage_count"], 4)
+        self.assertEqual(summary["pose_stage_ray_slack"], 1e-3)
+        self.assertTrue(summary["pose_stage_summaries"][2]["accepted"])
+
     def test_guarded_two_step_bundle_adjustment_rejects_on_hard_geometry_guard(self):
         points = np.array(
             [
@@ -777,6 +933,152 @@ class TestBundleAdjustment(unittest.TestCase):
             summary["intrinsic_geometry_max"],
             summary["pose_geometry_max"],
         )
+        np.testing.assert_allclose(final_cals[3].get_pos(), pose_cals[3].get_pos())
+
+    def test_guarded_two_step_bundle_adjustment_rejects_on_hard_correspondence_guard(self):
+        points = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [20.0, 0.0, 0.0],
+                [40.0, 0.0, 0.0],
+                [60.0, 0.0, 0.0],
+            ],
+            dtype=float,
+        )
+        observed_pixels = np.zeros((len(points), 4, 2), dtype=float)
+        pose_cals = [self.clone_calibration(cal) for cal in self.true_cals]
+        for cal in pose_cals:
+            cal.set_pos(np.zeros(3, dtype=float))
+            cal.set_angles(np.zeros(3, dtype=float))
+        start_cals = [self.clone_calibration(cal) for cal in pose_cals]
+        bad_intrinsic_cals = [self.clone_calibration(cal) for cal in self.true_cals]
+        for cal in bad_intrinsic_cals:
+            cal.set_pos(np.zeros(3, dtype=float))
+            cal.set_angles(np.zeros(3, dtype=float))
+        bad_intrinsic_cals[2].set_pos(
+            bad_intrinsic_cals[2].get_pos() + np.array([25.0, 0.0, 0.0])
+        )
+
+        intrinsics = OrientPar()
+        intrinsics.k1flag = 1
+        intrinsics.p1flag = 1
+        intrinsics.p2flag = 1
+        target_sets = [
+            np.asarray([[point[0], point[1]] for point in points], dtype=float)
+            for _ in range(4)
+        ]
+
+        with patch(
+            "openptv_python.orientation.multi_camera_bundle_adjustment",
+            side_effect=[
+                (pose_cals, points.copy(), {"success": True}),
+                (bad_intrinsic_cals, points.copy(), {"success": True}),
+            ],
+        ), patch(
+            "openptv_python.orientation.reprojection_rms",
+            side_effect=[10.0, 5.0, 4.0],
+        ), patch(
+            "openptv_python.orientation.mean_ray_convergence",
+            side_effect=[3.0, 2.0, 1.0],
+        ), patch(
+            "openptv_python.orientation.image_coordinates",
+            side_effect=lambda pts, cal, _mm: pts[:, :2] + cal.get_pos()[:2],
+        ), patch(
+            "openptv_python.orientation.arr_metric_to_pixel",
+            side_effect=lambda coords, _cpar: coords,
+        ):
+            final_cals, _, summary = guarded_two_step_bundle_adjustment(
+                observed_pixels,
+                start_cals,
+                self.control,
+                OrientPar(),
+                intrinsics,
+                point_init=points,
+                fixed_camera_indices=[0, 1],
+                correspondence_original_ids=np.tile(np.arange(len(points))[:, None], (1, 4)),
+                correspondence_point_frame_indices=np.zeros(len(points), dtype=int),
+                correspondence_frame_target_pixels=[target_sets],
+                correspondence_guard_mode="hard",
+                correspondence_guard_threshold=0.2,
+            )
+
+        self.assertEqual(summary["accepted_stage"], "pose")
+        self.assertTrue(summary["pose_correspondence_ok"])
+        self.assertFalse(summary["intrinsic_correspondence_ok"])
+        self.assertGreater(summary["intrinsic_correspondence_rate"], 0.2)
+        np.testing.assert_allclose(final_cals[2].get_pos(), pose_cals[2].get_pos())
+
+    def test_guarded_two_step_bundle_adjustment_rejects_on_soft_correspondence_guard(self):
+        points = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [20.0, 0.0, 0.0],
+                [40.0, 0.0, 0.0],
+                [60.0, 0.0, 0.0],
+            ],
+            dtype=float,
+        )
+        observed_pixels = np.zeros((len(points), 4, 2), dtype=float)
+        pose_cals = [self.clone_calibration(cal) for cal in self.true_cals]
+        for cal in pose_cals:
+            cal.set_pos(np.zeros(3, dtype=float))
+            cal.set_angles(np.zeros(3, dtype=float))
+        start_cals = [self.clone_calibration(cal) for cal in pose_cals]
+        bad_intrinsic_cals = [self.clone_calibration(cal) for cal in self.true_cals]
+        for cal in bad_intrinsic_cals:
+            cal.set_pos(np.zeros(3, dtype=float))
+            cal.set_angles(np.zeros(3, dtype=float))
+        bad_intrinsic_cals[3].set_pos(
+            bad_intrinsic_cals[3].get_pos() + np.array([25.0, 0.0, 0.0])
+        )
+
+        intrinsics = OrientPar()
+        intrinsics.k1flag = 1
+        intrinsics.p1flag = 1
+        intrinsics.p2flag = 1
+        target_sets = [
+            np.asarray([[point[0], point[1]] for point in points], dtype=float)
+            for _ in range(4)
+        ]
+
+        with patch(
+            "openptv_python.orientation.multi_camera_bundle_adjustment",
+            side_effect=[
+                (pose_cals, points.copy(), {"success": True}),
+                (bad_intrinsic_cals, points.copy(), {"success": True}),
+            ],
+        ), patch(
+            "openptv_python.orientation.reprojection_rms",
+            side_effect=[10.0, 5.0, 4.0],
+        ), patch(
+            "openptv_python.orientation.mean_ray_convergence",
+            side_effect=[3.0, 2.0, 1.0],
+        ), patch(
+            "openptv_python.orientation.image_coordinates",
+            side_effect=lambda pts, cal, _mm: pts[:, :2] + cal.get_pos()[:2],
+        ), patch(
+            "openptv_python.orientation.arr_metric_to_pixel",
+            side_effect=lambda coords, _cpar: coords,
+        ):
+            final_cals, _, summary = guarded_two_step_bundle_adjustment(
+                observed_pixels,
+                start_cals,
+                self.control,
+                OrientPar(),
+                intrinsics,
+                point_init=points,
+                fixed_camera_indices=[0, 1],
+                correspondence_original_ids=np.tile(np.arange(len(points))[:, None], (1, 4)),
+                correspondence_point_frame_indices=np.zeros(len(points), dtype=int),
+                correspondence_frame_target_pixels=[target_sets],
+                correspondence_guard_mode="soft",
+                correspondence_guard_reference_rate=0.0,
+            )
+
+        self.assertEqual(summary["accepted_stage"], "pose")
+        self.assertTrue(summary["pose_correspondence_ok"])
+        self.assertFalse(summary["intrinsic_correspondence_ok"])
+        self.assertGreater(summary["intrinsic_correspondence_rate"], 0.0)
         np.testing.assert_allclose(final_cals[3].get_pos(), pose_cals[3].get_pos())
 
     def test_cavity_intrinsics_only_improves_from_intrinsic_perturbation(self):

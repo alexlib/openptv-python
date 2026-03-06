@@ -17,7 +17,7 @@ from .calibration_compare import (
     format_calibration_comparison,
 )
 from .epi import epipolar_curve
-from .imgcoord import img_coord
+from .imgcoord import image_coordinates, img_coord
 from .orientation import (
     guarded_two_step_bundle_adjustment,
     initialize_bundle_adjustment_points,
@@ -36,7 +36,7 @@ from .parameters import (
 )
 from .sortgrid import read_calblock as read_sortgrid_calblock
 from .tracking_frame_buf import read_path_frame, read_targets
-from .trafo import metric_to_pixel
+from .trafo import arr_metric_to_pixel, metric_to_pixel
 
 
 @dataclass(frozen=True)
@@ -67,6 +67,7 @@ class ExperimentResult:
     camera_position_shifts: List[float]
     camera_angle_shifts: List[float]
     geometry_projection_drift: List[ProjectionDriftSummary] | None = None
+    correspondence_replacement: CorrespondenceReplacementSummary | None = None
     refined_cals: List[Calibration] | None = None
     refined_points: np.ndarray | None = None
 
@@ -120,6 +121,27 @@ class ProjectionDriftSummary:
     mean_distance: float
     p95_distance: float
     max_distance: float
+
+
+@dataclass(frozen=True)
+class CorrespondenceReplacementSummary:
+    """How strongly a calibration would replace the original quadruplet identities."""
+
+    replacement_rate: float
+    camera_change_rates: List[float]
+    mean_nearest_distance: float
+    p95_nearest_distance: float
+    max_nearest_distance: float
+
+
+@dataclass(frozen=True)
+class ObservationTrackingData:
+    """Original correspondence identities and candidate detections for a case."""
+
+    original_target_ids: np.ndarray
+    point_frame_indices: np.ndarray
+    frame_target_pixels: List[List[np.ndarray]]
+    reference_replacement_rate: float | None = None
 
 
 def clone_calibration(cal: Calibration) -> Calibration:
@@ -374,6 +396,166 @@ def load_case_observations(
         control,
         np.concatenate(observed_batches, axis=0),
         np.concatenate(point_batches, axis=0),
+    )
+
+
+def summarize_correspondence_replacements(
+    points: np.ndarray,
+    cals: Sequence[Calibration],
+    control: ControlPar,
+    tracking_data: ObservationTrackingData | None,
+) -> CorrespondenceReplacementSummary | None:
+    """Measure how often reprojections switch to different target identities."""
+    if tracking_data is None:
+        return None
+
+    projected_pixels = np.empty((points.shape[0], len(cals), 2), dtype=float)
+    for camera_index, cal in enumerate(cals):
+        projected_pixels[:, camera_index, :] = arr_metric_to_pixel(
+            image_coordinates(points, cal, control.mm),
+            control,
+        )
+
+    replacement_ids = np.empty_like(tracking_data.original_target_ids)
+    nearest_distances = np.empty_like(tracking_data.original_target_ids, dtype=float)
+    for point_index in range(points.shape[0]):
+        frame_targets = tracking_data.frame_target_pixels[
+            int(tracking_data.point_frame_indices[point_index])
+        ]
+        for camera_index in range(len(cals)):
+            deltas = frame_targets[camera_index] - projected_pixels[point_index, camera_index]
+            squared_distances = np.sum(deltas * deltas, axis=1)
+            nearest_index = int(np.argmin(squared_distances))
+            replacement_ids[point_index, camera_index] = nearest_index
+            nearest_distances[point_index, camera_index] = float(
+                np.sqrt(squared_distances[nearest_index])
+            )
+
+    changed_mask = np.any(
+        replacement_ids != tracking_data.original_target_ids,
+        axis=1,
+    )
+    camera_change_rates = [
+        float(
+            np.mean(
+                replacement_ids[:, camera_index]
+                != tracking_data.original_target_ids[:, camera_index]
+            )
+        )
+        for camera_index in range(len(cals))
+    ]
+    return CorrespondenceReplacementSummary(
+        replacement_rate=float(np.mean(changed_mask)),
+        camera_change_rates=camera_change_rates,
+        mean_nearest_distance=float(np.mean(nearest_distances)),
+        p95_nearest_distance=float(np.percentile(nearest_distances, 95.0)),
+        max_nearest_distance=float(np.max(nearest_distances)),
+    )
+
+
+def load_case_tracking_data(
+    case_dir: Path,
+    num_cams: int,
+    *,
+    max_frames: int | None,
+    max_points_per_frame: int | None,
+    control: ControlPar,
+    reference_cals: Sequence[Calibration],
+) -> ObservationTrackingData | None:
+    """Load original target identities and candidate detections for replacement guards."""
+    seq = SequencePar.from_file(case_dir / "parameters/sequence.par", num_cams)
+    frames = list(range(seq.first, seq.last + 1))
+    if max_frames is not None:
+        frames = frames[:max_frames]
+
+    original_target_ids = []
+    point_frame_indices = []
+    frame_target_pixels: List[List[np.ndarray]] = []
+    reference_points = []
+    for frame_index, frame in enumerate(frames):
+        cor_buf, path_buf = read_path_frame(
+            str(case_dir / "res_orig/rt_is"),
+            "",
+            "",
+            frame,
+        )
+        targets = [
+            read_targets(str(case_dir / f"img_orig/cam{cam_num}.%05d"), frame)
+            for cam_num in range(1, num_cams + 1)
+        ]
+        subset = [
+            point_num
+            for point_num, corres in enumerate(cor_buf)
+            if np.all(corres.p[:num_cams] >= 0)
+        ]
+        if max_points_per_frame is not None:
+            subset = subset[:max_points_per_frame]
+
+        for point_num in subset:
+            original_target_ids.append(cor_buf[point_num].p[:num_cams].copy())
+            point_frame_indices.append(frame_index)
+            reference_points.append(path_buf[point_num].x.copy())
+
+        frame_target_pixels.append(
+            [np.asarray([[target.x, target.y] for target in cam_targets], dtype=float) for cam_targets in targets]
+        )
+
+    if not original_target_ids:
+        return None
+
+    tracking_data = ObservationTrackingData(
+        original_target_ids=np.asarray(original_target_ids, dtype=int),
+        point_frame_indices=np.asarray(point_frame_indices, dtype=int),
+        frame_target_pixels=frame_target_pixels,
+    )
+    reference_summary = summarize_correspondence_replacements(
+        np.asarray(reference_points, dtype=float),
+        reference_cals,
+        control,
+        tracking_data,
+    )
+    return ObservationTrackingData(
+        original_target_ids=tracking_data.original_target_ids,
+        point_frame_indices=tracking_data.point_frame_indices,
+        frame_target_pixels=tracking_data.frame_target_pixels,
+        reference_replacement_rate=(
+            None if reference_summary is None else reference_summary.replacement_rate
+        ),
+    )
+
+
+def format_correspondence_replacement(
+    summary: CorrespondenceReplacementSummary | None,
+) -> str:
+    """Render a compact correspondence-replacement summary."""
+    if summary is None:
+        return "No correspondence replacement data available."
+
+    camera_rates = " ".join(
+        f"cam{camera_index + 1}={100.0 * rate:.1f}%"
+        for camera_index, rate in enumerate(summary.camera_change_rates)
+    )
+    return (
+        f"quad_replacement_rate={100.0 * summary.replacement_rate:.1f}%\n"
+        f"camera_change_rates: {camera_rates}\n"
+        f"nearest_distance_px: mean={summary.mean_nearest_distance:.3f} "
+        f"p95={summary.p95_nearest_distance:.3f} max={summary.max_nearest_distance:.3f}"
+    )
+
+
+def should_block_export_on_correspondence(
+    summary: CorrespondenceReplacementSummary | None,
+    threshold: float | None,
+) -> tuple[bool, str]:
+    """Return whether an export should be blocked by correspondence churn."""
+    if summary is None or threshold is None or threshold <= 0:
+        return False, ""
+    if summary.replacement_rate <= threshold:
+        return False, ""
+    return (
+        True,
+        "correspondence_export_blocked="
+        f"replacement_rate={summary.replacement_rate:.3f}>{threshold:.3f}",
     )
 
 
@@ -720,15 +902,46 @@ def summarize_fixed_camera_diagnostics(
     return diagnostics
 
 
+def normalize_staged_release_order(
+    staged_release_order: Sequence[int] | None,
+    num_cams: int,
+) -> List[int]:
+    """Return a validated zero-based staged camera release order."""
+    if staged_release_order is None:
+        order = list(range(num_cams))
+    else:
+        order = [int(camera_index) for camera_index in staged_release_order]
+
+    if len(order) != num_cams:
+        raise ValueError(
+            f"staged_release_order must contain exactly {num_cams} cameras"
+        )
+    if sorted(order) != list(range(num_cams)):
+        raise ValueError(
+            "staged_release_order must be a permutation of zero-based camera indices"
+        )
+    return order
+
+
 def default_experiments(
     *,
+    num_cams: int = 4,
     known_points: Dict[int, np.ndarray] | None = None,
     known_point_sigmas: float | np.ndarray | None = None,
     perturbation_scale: float = 1.0,
+    staged_release_order: Sequence[int] | None = None,
+    pose_stage_ray_slack: float = 0.0,
     geometry_guard_mode: str = "off",
     geometry_guard_threshold: float | None = None,
+    correspondence_guard_mode: str = "off",
+    correspondence_guard_threshold: float | None = None,
+    correspondence_guard_reference_rate: float | None = None,
 ) -> List[ExperimentSpec]:
     """Return a set of representative BA configurations."""
+    staged_order = normalize_staged_release_order(staged_release_order, num_cams)
+    staged_fixed = [
+        camera_index for camera_index in range(num_cams) if camera_index != staged_order[0]
+    ]
     pose_priors = {
         "x0": 0.5,
         "y0": 0.5,
@@ -831,7 +1044,7 @@ def default_experiments(
             mode="multi",
             ba_kwargs={
                 "orient_par": intrinsics_only,
-                "fixed_camera_indices": [0, 1, 2, 3],
+                "fixed_camera_indices": list(range(num_cams)),
                 "loss": "linear",
                 "method": "trf",
                 "prior_sigmas": {
@@ -868,6 +1081,32 @@ def default_experiments(
                 "intrinsic_max_nfev": 4,
                 "geometry_guard_mode": geometry_guard_mode,
                 "geometry_guard_threshold": geometry_guard_threshold,
+                "correspondence_guard_mode": correspondence_guard_mode,
+                "correspondence_guard_threshold": correspondence_guard_threshold,
+                "correspondence_guard_reference_rate": correspondence_guard_reference_rate,
+            },
+        ),
+        ExperimentSpec(
+            name="guarded_stagewise_release",
+            description="Guarded BA that releases one camera at a time before tightly constrained intrinsics",
+            mode="guarded",
+            ba_kwargs={
+                "pose_orient_par": OrientPar(),
+                "intrinsic_orient_par": intrinsics,
+                "fixed_camera_indices": staged_fixed,
+                "pose_release_camera_order": staged_order,
+                "pose_stage_ray_slack": pose_stage_ray_slack,
+                "pose_prior_sigmas": pose_priors,
+                "pose_parameter_bounds": pose_bounds,
+                "pose_max_nfev": 8,
+                "intrinsic_prior_sigmas": tight_intrinsic_priors,
+                "intrinsic_parameter_bounds": tight_intrinsic_bounds,
+                "intrinsic_max_nfev": 4,
+                "geometry_guard_mode": geometry_guard_mode,
+                "geometry_guard_threshold": geometry_guard_threshold,
+                "correspondence_guard_mode": correspondence_guard_mode,
+                "correspondence_guard_threshold": correspondence_guard_threshold,
+                "correspondence_guard_reference_rate": correspondence_guard_reference_rate,
             },
         ),
     ]
@@ -909,6 +1148,34 @@ def default_experiments(
                         "known_point_sigmas": known_point_sigmas,
                         "geometry_guard_mode": geometry_guard_mode,
                         "geometry_guard_threshold": geometry_guard_threshold,
+                        "correspondence_guard_mode": correspondence_guard_mode,
+                        "correspondence_guard_threshold": correspondence_guard_threshold,
+                        "correspondence_guard_reference_rate": correspondence_guard_reference_rate,
+                    },
+                ),
+                ExperimentSpec(
+                    name="guarded_stagewise_release_known_points",
+                    description="Stagewise guarded BA with soft known-point geometry anchors",
+                    mode="guarded",
+                    ba_kwargs={
+                        "pose_orient_par": OrientPar(),
+                        "intrinsic_orient_par": intrinsics,
+                        "fixed_camera_indices": staged_fixed,
+                        "pose_release_camera_order": staged_order,
+                        "pose_stage_ray_slack": pose_stage_ray_slack,
+                        "pose_prior_sigmas": pose_priors,
+                        "pose_parameter_bounds": pose_bounds,
+                        "pose_max_nfev": 8,
+                        "intrinsic_prior_sigmas": tight_intrinsic_priors,
+                        "intrinsic_parameter_bounds": tight_intrinsic_bounds,
+                        "intrinsic_max_nfev": 4,
+                        "known_points": known_points,
+                        "known_point_sigmas": known_point_sigmas,
+                        "geometry_guard_mode": geometry_guard_mode,
+                        "geometry_guard_threshold": geometry_guard_threshold,
+                        "correspondence_guard_mode": correspondence_guard_mode,
+                        "correspondence_guard_threshold": correspondence_guard_threshold,
+                        "correspondence_guard_reference_rate": correspondence_guard_reference_rate,
                     },
                 ),
             ]
@@ -942,7 +1209,9 @@ def run_experiment(
     start_cals: List[Calibration],
     reference_cals: List[Calibration],
     reference_geometry_points: np.ndarray | None,
+    tracking_data: ObservationTrackingData | None,
     geometry_export_threshold: float | None,
+    correspondence_export_threshold: float | None,
     source_case_dir: Path,
     output_dir: Path | None,
 ) -> ExperimentResult:
@@ -1020,6 +1289,14 @@ def run_experiment(
                 List[int] | None,
                 spec.ba_kwargs.get("fixed_camera_indices"),
             ),
+            pose_release_camera_order=cast(
+                List[int] | None,
+                spec.ba_kwargs.get("pose_release_camera_order"),
+            ),
+            pose_stage_ray_slack=cast(
+                float,
+                spec.ba_kwargs.get("pose_stage_ray_slack", 0.0),
+            ),
             pose_prior_sigmas=cast(
                 Dict[str, float] | None,
                 spec.ba_kwargs.get("pose_prior_sigmas"),
@@ -1094,6 +1371,27 @@ def run_experiment(
                 float | None,
                 spec.ba_kwargs.get("geometry_guard_threshold"),
             ),
+            correspondence_original_ids=(
+                None if tracking_data is None else tracking_data.original_target_ids
+            ),
+            correspondence_point_frame_indices=(
+                None if tracking_data is None else tracking_data.point_frame_indices
+            ),
+            correspondence_frame_target_pixels=(
+                None if tracking_data is None else tracking_data.frame_target_pixels
+            ),
+            correspondence_guard_mode=cast(
+                str,
+                spec.ba_kwargs.get("correspondence_guard_mode", "off"),
+            ),
+            correspondence_guard_threshold=cast(
+                float | None,
+                spec.ba_kwargs.get("correspondence_guard_threshold"),
+            ),
+            correspondence_guard_reference_rate=cast(
+                float | None,
+                spec.ba_kwargs.get("correspondence_guard_reference_rate"),
+            ),
         )
         success = True
         final_rms = cast(float, summary["final_reprojection_rms"])
@@ -1113,17 +1411,29 @@ def run_experiment(
         control,
         reference_geometry_points,
     )
+    correspondence_replacement = summarize_correspondence_replacements(
+        refined_points,
+        refined_cals,
+        control,
+        tracking_data,
+    )
     export_blocked, export_note = should_block_export_on_geometry(
         geometry_projection_drift,
         geometry_export_threshold,
     )
+    correspondence_blocked, correspondence_note = should_block_export_on_correspondence(
+        correspondence_replacement,
+        correspondence_export_threshold,
+    )
     if export_note:
         notes = f"{notes}; {export_note}" if notes else export_note
-    if export_blocked:
+    if correspondence_note:
+        notes = f"{notes}; {correspondence_note}" if notes else correspondence_note
+    if export_blocked or correspondence_blocked:
         success = False
 
     cal_dir = None
-    if output_dir is not None and not export_blocked:
+    if output_dir is not None and not (export_blocked or correspondence_blocked):
         case_out_dir = output_dir / spec.name
         cal_dir = ensure_output_case_layout(source_case_dir, case_out_dir)
         write_calibration_folder(refined_cals, cal_dir)
@@ -1139,6 +1449,10 @@ def run_experiment(
         )
         (case_out_dir / "geometry_check.txt").write_text(
             format_projection_drift(geometry_projection_drift) + "\n",
+            encoding="utf-8",
+        )
+        (case_out_dir / "correspondence_check.txt").write_text(
+            format_correspondence_replacement(correspondence_replacement) + "\n",
             encoding="utf-8",
         )
 
@@ -1157,6 +1471,7 @@ def run_experiment(
         camera_position_shifts=camera_position_shifts,
         camera_angle_shifts=camera_angle_shifts,
         geometry_projection_drift=geometry_projection_drift,
+        correspondence_replacement=correspondence_replacement,
         refined_cals=refined_cals,
         refined_points=refined_points,
     )
@@ -1312,7 +1627,9 @@ def run_fixed_camera_pair_diagnostics(
     start_cals: List[Calibration],
     reference_cals: List[Calibration],
     reference_geometry_points: np.ndarray | None,
+    tracking_data: ObservationTrackingData | None,
     geometry_export_threshold: float | None,
+    correspondence_export_threshold: float | None,
     source_case_dir: Path,
 ) -> List[FixedCameraDiagnostic]:
     """Run one experiment over every two-camera anchor pair and summarize results."""
@@ -1335,7 +1652,9 @@ def run_fixed_camera_pair_diagnostics(
                 start_cals=start_cals,
                 reference_cals=reference_cals,
                 reference_geometry_points=reference_geometry_points,
+                tracking_data=tracking_data,
                 geometry_export_threshold=geometry_export_threshold,
+                correspondence_export_threshold=correspondence_export_threshold,
                 source_case_dir=source_case_dir,
                 output_dir=None,
             )
@@ -1440,8 +1759,39 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--geometry-export-threshold",
         type=float,
-        default=2.5,
+        default=None,
         help="Do not write output case folders whose final calibration-body drift exceeds this many pixels; 0 disables export blocking.",
+    )
+    parser.add_argument(
+        "--correspondence-guard-mode",
+        type=str,
+        choices=("auto", "off", "soft", "hard"),
+        default="auto",
+        help="Guarded-BA correspondence acceptance mode. 'auto' uses a hard replacement-rate guard when original quadruplet identities are available.",
+    )
+    parser.add_argument(
+        "--correspondence-guard-threshold",
+        type=float,
+        default=None,
+        help="Maximum allowed quadruplet replacement rate for hard correspondence guards. If omitted, the demo derives a case-specific threshold from the trusted reference calibration.",
+    )
+    parser.add_argument(
+        "--correspondence-export-threshold",
+        type=float,
+        default=None,
+        help="Do not write output case folders whose final quadruplet replacement rate exceeds this threshold; 0 disables correspondence-based export blocking.",
+    )
+    parser.add_argument(
+        "--staged-release-order",
+        type=str,
+        default=None,
+        help="Comma-separated 1-based camera release order for staged guarded presets, for example '1,2,3,4'.",
+    )
+    parser.add_argument(
+        "--staged-ray-slack",
+        type=float,
+        default=0.0,
+        help="Allow staged guarded pose-release steps to worsen mean ray convergence by up to this amount relative to the last accepted stage.",
     )
     return parser.parse_args(list(argv) if argv is not None else None)
 
@@ -1461,12 +1811,68 @@ def main(argv: Iterable[str] | None = None) -> int:
     true_cals = load_calibrations(case_dir, num_cams)
     start_cals = perturb_calibrations(true_cals, args.perturbation_scale)
     reference_geometry_points = load_reference_geometry_points(case_dir, num_cams)
+    tracking_data = load_case_tracking_data(
+        case_dir,
+        num_cams,
+        max_frames=args.max_frames,
+        max_points_per_frame=args.max_points_per_frame,
+        control=control,
+        reference_cals=true_cals,
+    )
     if args.geometry_guard_mode == "auto":
         geometry_guard_mode = "hard" if reference_geometry_points is not None else "off"
     else:
         geometry_guard_mode = args.geometry_guard_mode
     geometry_export_threshold = (
-        args.geometry_export_threshold if reference_geometry_points is not None else None
+        (
+            args.geometry_export_threshold
+            if args.geometry_export_threshold is not None
+            else args.geometry_guard_threshold
+        )
+        if reference_geometry_points is not None
+        else None
+    )
+    if args.correspondence_guard_mode == "auto":
+        correspondence_guard_mode = "hard" if tracking_data is not None else "off"
+    else:
+        correspondence_guard_mode = args.correspondence_guard_mode
+    if tracking_data is not None and tracking_data.reference_replacement_rate is not None:
+        auto_correspondence_threshold = min(
+            0.25,
+            max(0.05, tracking_data.reference_replacement_rate + 0.02),
+        )
+    else:
+        auto_correspondence_threshold = None
+    correspondence_guard_threshold = (
+        args.correspondence_guard_threshold
+        if args.correspondence_guard_threshold is not None
+        else auto_correspondence_threshold
+    )
+    correspondence_export_threshold = (
+        (
+            args.correspondence_export_threshold
+            if args.correspondence_export_threshold is not None
+            else correspondence_guard_threshold
+        )
+        if tracking_data is not None
+        else None
+    )
+    if args.staged_release_order is None:
+        staged_release_order = list(range(num_cams))
+    else:
+        try:
+            staged_release_order = [
+                int(token.strip()) - 1
+                for token in args.staged_release_order.split(",")
+                if token.strip()
+            ]
+        except ValueError as exc:
+            raise ValueError(
+                "--staged-release-order must be a comma-separated list of integers"
+            ) from exc
+    staged_release_order = normalize_staged_release_order(
+        staged_release_order,
+        num_cams,
     )
     known_points = build_known_point_constraints(point_init, args.known_points)
     known_point_sigmas = args.known_point_sigma if known_points else None
@@ -1488,19 +1894,40 @@ def main(argv: Iterable[str] | None = None) -> int:
         print("Known-point anchors: disabled")
     if reference_geometry_points is not None:
         print(
-            f"Geometry guard: mode={geometry_guard_mode}, guard_threshold={args.geometry_guard_threshold:.3f}px, export_threshold={args.geometry_export_threshold:.3f}px"
+            f"Geometry guard: mode={geometry_guard_mode}, guard_threshold={args.geometry_guard_threshold:.3f}px, export_threshold={geometry_export_threshold:.3f}px"
         )
     else:
         print("Geometry guard: unavailable for this case (no known 3D target file found)")
+    if tracking_data is not None and tracking_data.reference_replacement_rate is not None:
+        print(
+            "Correspondence guard: "
+            f"mode={correspondence_guard_mode}, reference_rate={tracking_data.reference_replacement_rate:.3f}, "
+            f"guard_threshold={correspondence_guard_threshold:.3f}, export_threshold={correspondence_export_threshold:.3f}"
+        )
+    else:
+        print("Correspondence guard: unavailable for this case")
+    print(
+        "Staged guarded release: "
+        f"order={[camera_index + 1 for camera_index in staged_release_order]}, "
+        f"ray_slack={args.staged_ray_slack:.6f}"
+    )
     print(f"Output folders: {output_dir if output_dir is not None else 'disabled'}")
     print()
 
     experiments = default_experiments(
+        num_cams=num_cams,
         known_points=known_points or None,
         known_point_sigmas=known_point_sigmas,
         perturbation_scale=args.perturbation_scale,
+        staged_release_order=staged_release_order,
+        pose_stage_ray_slack=args.staged_ray_slack,
         geometry_guard_mode=geometry_guard_mode,
         geometry_guard_threshold=args.geometry_guard_threshold,
+        correspondence_guard_mode=correspondence_guard_mode,
+        correspondence_guard_threshold=correspondence_guard_threshold,
+        correspondence_guard_reference_rate=(
+            None if tracking_data is None else tracking_data.reference_replacement_rate
+        ),
     )
 
     if args.diagnose_fixed_pairs:
@@ -1513,7 +1940,9 @@ def main(argv: Iterable[str] | None = None) -> int:
             start_cals=start_cals,
             reference_cals=true_cals,
             reference_geometry_points=reference_geometry_points,
+            tracking_data=tracking_data,
             geometry_export_threshold=geometry_export_threshold,
+            correspondence_export_threshold=correspondence_export_threshold,
             source_case_dir=case_dir,
         )
         print(
@@ -1540,7 +1969,9 @@ def main(argv: Iterable[str] | None = None) -> int:
             start_cals=start_cals,
             reference_cals=true_cals,
             reference_geometry_points=reference_geometry_points,
+            tracking_data=tracking_data,
             geometry_export_threshold=geometry_export_threshold,
+            correspondence_export_threshold=correspondence_export_threshold,
             source_case_dir=case_dir,
             output_dir=None,
         )
@@ -1606,7 +2037,9 @@ def main(argv: Iterable[str] | None = None) -> int:
             start_cals=start_cals,
             reference_cals=true_cals,
             reference_geometry_points=reference_geometry_points,
+            tracking_data=tracking_data,
             geometry_export_threshold=geometry_export_threshold,
+            correspondence_export_threshold=correspondence_export_threshold,
             source_case_dir=case_dir,
             output_dir=output_dir,
         )
