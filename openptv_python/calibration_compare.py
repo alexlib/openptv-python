@@ -107,7 +107,8 @@ def format_calibration_comparison(
         delta = deltas[camera_key]
         lines.append(f"{camera_key}:")
         lines.append(
-            "  position_delta: " + " ".join(f"{value:+.9f}" for value in delta.position_delta)
+            "  position_delta: "
+            + " ".join(f"{value:+.9f}" for value in delta.position_delta)
         )
         lines.append(
             "  angle_delta: " + " ".join(f"{value:+.9f}" for value in delta.angle_delta)
@@ -120,7 +121,8 @@ def format_calibration_comparison(
             "  glass_delta: " + " ".join(f"{value:+.9f}" for value in delta.glass_delta)
         )
         lines.append(
-            "  addpar_delta: " + " ".join(f"{value:+.9f}" for value in delta.added_par_delta)
+            "  addpar_delta: "
+            + " ".join(f"{value:+.9f}" for value in delta.added_par_delta)
         )
 
     return "\n".join(lines)

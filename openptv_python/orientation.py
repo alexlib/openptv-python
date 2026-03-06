@@ -1316,6 +1316,45 @@ def reprojection_rms_per_camera(
     return per_camera
 
 
+def mean_ray_convergence(
+    observed_pixels: np.ndarray,
+    cals: List[Calibration],
+    cpar: ControlPar,
+) -> float:
+    """Return the mean ray convergence from triangulating observed pixels."""
+    _, ray_convergence = initialize_bundle_adjustment_points(
+        observed_pixels, cals, cpar
+    )
+    return float(np.mean(ray_convergence))
+
+
+def _expand_parameter_limits(
+    parameter_names: List[str],
+    limits: Optional[Dict[str, Tuple[float, float]]],
+    base_blocks: List[np.ndarray],
+    repeat: int,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Expand per-parameter bounds for each optimized camera block."""
+    lower = []
+    upper = []
+
+    if repeat <= 0:
+        return np.empty(0, dtype=np.float64), np.empty(0, dtype=np.float64)
+
+    for block_index in range(repeat):
+        for param_index, name in enumerate(parameter_names):
+            if limits is None or name not in limits:
+                lower.append(-np.inf)
+                upper.append(np.inf)
+                continue
+            low_delta, high_delta = limits[name]
+            base_value = base_blocks[block_index][param_index]
+            lower.append(base_value + low_delta)
+            upper.append(base_value + high_delta)
+
+    return np.asarray(lower, dtype=np.float64), np.asarray(upper, dtype=np.float64)
+
+
 def multi_camera_bundle_adjustment(
     observed_pixels: np.ndarray,
     cals: List[Calibration],
@@ -1328,7 +1367,13 @@ def multi_camera_bundle_adjustment(
     f_scale: float = 1.0,
     method: str = "trf",
     prior_sigmas: Optional[Dict[str, float]] = None,
+    parameter_bounds: Optional[Dict[str, Tuple[float, float]]] = None,
     max_nfev: Optional[int] = None,
+    optimize_extrinsics: bool = True,
+    optimize_points: bool = True,
+    ftol: Optional[float] = None,
+    xtol: Optional[float] = None,
+    gtol: Optional[float] = None,
 ) -> Tuple[List[Calibration], np.ndarray, scipy.optimize.OptimizeResult]:
     """Jointly refine multi-camera calibration and 3D points by reprojection error."""
     observed_pixels = np.asarray(observed_pixels, dtype=np.float64)
@@ -1361,9 +1406,20 @@ def multi_camera_bundle_adjustment(
     if any(cam < 0 or cam >= num_cams for cam in fixed_camera_indices):
         raise ValueError("fixed_camera_indices contains an out-of-range camera index")
 
-    optimized_cam_indices = [
-        cam for cam in range(num_cams) if cam not in fixed_camera_indices
-    ]
+    if optimize_extrinsics:
+        optimized_cam_indices = [
+            cam for cam in range(num_cams) if cam not in fixed_camera_indices
+        ]
+    else:
+        optimized_cam_indices = list(range(num_cams))
+
+    if not optimize_extrinsics and not optional_names and not include_interface:
+        raise ValueError("No camera parameters are enabled for optimization")
+
+    if not optimize_points and not optimized_cam_indices:
+        raise ValueError(
+            "Bundle adjustment must optimize points or at least one camera"
+        )
 
     # Refining both 3D points and camera poses from image observations has a similarity
     # gauge. One fixed camera removes global translation/rotation, but scale still drifts
@@ -1371,7 +1427,13 @@ def multi_camera_bundle_adjustment(
     has_translation_priors = all(
         prior_sigmas.get(name, 0) > 0 for name in ("x0", "y0", "z0")
     )
-    if optimized_cam_indices and len(fixed_camera_indices) < 2 and not has_translation_priors:
+    if (
+        optimize_points
+        and optimized_cam_indices
+        and optimize_extrinsics
+        and len(fixed_camera_indices) < 2
+        and not has_translation_priors
+    ):
         raise ValueError(
             "Bundle adjustment with free 3D points and only one fixed camera is scale-ambiguous. "
             "Fix at least two cameras via fixed_camera_indices or provide translation priors "
@@ -1389,7 +1451,10 @@ def multi_camera_bundle_adjustment(
 
     base_camera_blocks = []
     base_glass_vectors: Dict[int, np.ndarray] = {}
-    parameter_names = ["x0", "y0", "z0", "omega", "phi", "kappa"] + optional_names
+    parameter_names = []
+    if optimize_extrinsics:
+        parameter_names.extend(["x0", "y0", "z0", "omega", "phi", "kappa"])
+    parameter_names.extend(optional_names)
     if include_interface:
         parameter_names.extend(["glass_e1", "glass_e2"])
 
@@ -1398,24 +1463,50 @@ def multi_camera_bundle_adjustment(
         initial_block = _camera_parameter_block(
             base_cals[cam], optional_names, include_interface
         )
+        if not optimize_extrinsics:
+            initial_block = initial_block[6:]
         initial_blocks.append(initial_block)
         base_camera_blocks.append(initial_block.copy())
         if include_interface:
             base_glass_vectors[cam] = base_cals[cam].glass_par.copy()
 
+    camera_block_size = len(parameter_names)
+    payloads = []
     if initial_blocks:
-        x0 = np.concatenate(initial_blocks + [points0.ravel()])
+        payloads.extend(initial_blocks)
+    if optimize_points:
+        payloads.append(points0.ravel())
+    if payloads:
+        x0 = np.concatenate(payloads)
     else:
-        x0 = points0.ravel().copy()
+        x0 = np.empty(0, dtype=np.float64)
 
-    camera_block_size = 6 + len(optional_names) + (2 if include_interface else 0)
     point_offset = camera_block_size * len(optimized_cam_indices)
+
+    camera_lower, camera_upper = _expand_parameter_limits(
+        parameter_names,
+        parameter_bounds,
+        base_camera_blocks,
+        len(optimized_cam_indices),
+    )
+    if optimize_points:
+        point_lower = np.full(points0.size, -np.inf, dtype=np.float64)
+        point_upper = np.full(points0.size, np.inf, dtype=np.float64)
+        bounds = (
+            np.concatenate([camera_lower, point_lower]),
+            np.concatenate([camera_upper, point_upper]),
+        )
+    else:
+        bounds = (camera_lower, camera_upper)
 
     def unpack_parameters(params: np.ndarray) -> Tuple[List[Calibration], np.ndarray]:
         trial_cals = [_clone_calibration(cal) for cal in base_cals]
         offset = 0
         for cam in optimized_cam_indices:
             block = params[offset : offset + camera_block_size]
+            if not optimize_extrinsics:
+                base_pose = _camera_parameter_block(base_cals[cam], [], False)[:6]
+                block = np.concatenate([base_pose, block])
             _apply_camera_parameter_block(
                 trial_cals[cam],
                 block,
@@ -1425,7 +1516,10 @@ def multi_camera_bundle_adjustment(
             )
             offset += camera_block_size
 
-        points = params[point_offset:].reshape(num_points, 3)
+        if optimize_points:
+            points = params[point_offset:].reshape(num_points, 3)
+        else:
+            points = points0.copy()
         return trial_cals, points
 
     def residual_vector(params: np.ndarray) -> np.ndarray:
@@ -1461,13 +1555,24 @@ def multi_camera_bundle_adjustment(
         observed_pixels, initial_points, initial_cals, cpar
     )
 
+    least_squares_kwargs = {
+        "method": method,
+        "loss": loss,
+        "f_scale": f_scale,
+        "max_nfev": max_nfev,
+        "bounds": bounds,
+    }
+    if ftol is not None:
+        least_squares_kwargs["ftol"] = ftol
+    if xtol is not None:
+        least_squares_kwargs["xtol"] = xtol
+    if gtol is not None:
+        least_squares_kwargs["gtol"] = gtol
+
     result = scipy.optimize.least_squares(
         residual_vector,
         x0,
-        method=method,
-        loss=loss,
-        f_scale=f_scale,
-        max_nfev=max_nfev,
+        **least_squares_kwargs,
     )
 
     refined_cals, refined_points = unpack_parameters(result.x)
@@ -1482,3 +1587,140 @@ def multi_camera_bundle_adjustment(
     result["optimized_camera_indices"] = optimized_cam_indices
 
     return refined_cals, refined_points, result
+
+
+def guarded_two_step_bundle_adjustment(
+    observed_pixels: np.ndarray,
+    cals: List[Calibration],
+    cpar: ControlPar,
+    pose_orient_par: OrientPar,
+    intrinsic_orient_par: OrientPar,
+    *,
+    point_init: Optional[np.ndarray] = None,
+    fixed_camera_indices: Optional[List[int]] = None,
+    pose_prior_sigmas: Optional[Dict[str, float]] = None,
+    pose_parameter_bounds: Optional[Dict[str, Tuple[float, float]]] = None,
+    pose_loss: str = "linear",
+    pose_method: str = "trf",
+    pose_max_nfev: Optional[int] = None,
+    intrinsic_prior_sigmas: Optional[Dict[str, float]] = None,
+    intrinsic_parameter_bounds: Optional[Dict[str, Tuple[float, float]]] = None,
+    intrinsic_loss: str = "linear",
+    intrinsic_method: str = "trf",
+    intrinsic_max_nfev: Optional[int] = None,
+    intrinsic_ftol: Optional[float] = 1e-12,
+    intrinsic_xtol: Optional[float] = 1e-12,
+    intrinsic_gtol: Optional[float] = 1e-12,
+    pose_optimize_points: bool = True,
+    intrinsic_optimize_points: bool = True,
+    reject_worse_solution: bool = True,
+    reject_on_ray_convergence: bool = True,
+) -> Tuple[List[Calibration], np.ndarray, Dict[str, object]]:
+    """Run pose-only BA then tightly constrained intrinsics BA with acceptance checks."""
+    base_cals = [_clone_calibration(cal) for cal in cals]
+    if point_init is None:
+        base_points, _ = initialize_bundle_adjustment_points(
+            observed_pixels, base_cals, cpar
+        )
+    else:
+        base_points = np.asarray(point_init, dtype=np.float64)
+        if base_points.shape != (observed_pixels.shape[0], 3):
+            raise ValueError("point_init must have shape (num_points, 3)")
+
+    baseline_rms = reprojection_rms(observed_pixels, base_points, base_cals, cpar)
+    baseline_ray_convergence = mean_ray_convergence(observed_pixels, base_cals, cpar)
+
+    pose_cals, pose_points, pose_result = multi_camera_bundle_adjustment(
+        observed_pixels,
+        base_cals,
+        cpar,
+        pose_orient_par,
+        point_init=base_points,
+        fixed_camera_indices=fixed_camera_indices,
+        loss=pose_loss,
+        method=pose_method,
+        prior_sigmas=pose_prior_sigmas,
+        parameter_bounds=pose_parameter_bounds,
+        max_nfev=pose_max_nfev,
+        optimize_extrinsics=True,
+        optimize_points=pose_optimize_points,
+    )
+    pose_rms = reprojection_rms(observed_pixels, pose_points, pose_cals, cpar)
+    pose_ray_convergence = mean_ray_convergence(observed_pixels, pose_cals, cpar)
+
+    intrinsic_fixed = list(range(len(cals)))
+    intrinsic_cals, intrinsic_points, intrinsic_result = multi_camera_bundle_adjustment(
+        observed_pixels,
+        pose_cals,
+        cpar,
+        intrinsic_orient_par,
+        point_init=pose_points,
+        fixed_camera_indices=intrinsic_fixed,
+        loss=intrinsic_loss,
+        method=intrinsic_method,
+        prior_sigmas=intrinsic_prior_sigmas,
+        parameter_bounds=intrinsic_parameter_bounds,
+        max_nfev=intrinsic_max_nfev,
+        optimize_extrinsics=False,
+        optimize_points=intrinsic_optimize_points,
+        ftol=intrinsic_ftol,
+        xtol=intrinsic_xtol,
+        gtol=intrinsic_gtol,
+    )
+    intrinsic_rms = reprojection_rms(
+        observed_pixels, intrinsic_points, intrinsic_cals, cpar
+    )
+    intrinsic_ray_convergence = mean_ray_convergence(
+        observed_pixels, intrinsic_cals, cpar
+    )
+
+    accepted_stage = "intrinsics"
+    final_cals = intrinsic_cals
+    final_points = intrinsic_points
+    final_rms = intrinsic_rms
+    final_ray_convergence = intrinsic_ray_convergence
+
+    pose_ok = pose_rms <= baseline_rms and (
+        not reject_on_ray_convergence
+        or pose_ray_convergence <= baseline_ray_convergence
+    )
+    intrinsic_ok = intrinsic_rms <= pose_rms and (
+        not reject_on_ray_convergence
+        or intrinsic_ray_convergence <= pose_ray_convergence
+    )
+
+    if reject_worse_solution:
+        if not pose_ok:
+            accepted_stage = "baseline"
+            final_cals = base_cals
+            final_points = base_points
+            final_rms = baseline_rms
+            final_ray_convergence = baseline_ray_convergence
+        elif not intrinsic_ok:
+            accepted_stage = "pose"
+            final_cals = pose_cals
+            final_points = pose_points
+            final_rms = pose_rms
+            final_ray_convergence = pose_ray_convergence
+
+    summary = {
+        "baseline_reprojection_rms": baseline_rms,
+        "baseline_mean_ray_convergence": baseline_ray_convergence,
+        "baseline_cals": base_cals,
+        "baseline_points": base_points,
+        "pose_reprojection_rms": pose_rms,
+        "pose_mean_ray_convergence": pose_ray_convergence,
+        "pose_cals": pose_cals,
+        "pose_points": pose_points,
+        "intrinsic_reprojection_rms": intrinsic_rms,
+        "intrinsic_mean_ray_convergence": intrinsic_ray_convergence,
+        "intrinsic_cals": intrinsic_cals,
+        "intrinsic_points": intrinsic_points,
+        "accepted_stage": accepted_stage,
+        "final_reprojection_rms": final_rms,
+        "final_mean_ray_convergence": final_ray_convergence,
+        "pose_result": pose_result,
+        "intrinsic_result": intrinsic_result,
+    }
+
+    return final_cals, final_points, summary
