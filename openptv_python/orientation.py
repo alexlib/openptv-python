@@ -1784,7 +1784,6 @@ def guarded_two_step_bundle_adjustment(
     reject_on_ray_convergence: bool = True,
 ) -> Tuple[List[Calibration], np.ndarray, Dict[str, object]]:
     """Run pose-only BA then tightly constrained intrinsics BA with acceptance checks."""
-
     if pose_stage_ray_slack < 0:
         raise ValueError("pose_stage_ray_slack must be non-negative")
 
@@ -1847,9 +1846,7 @@ def guarded_two_step_bundle_adjustment(
                     "geometry_guard_threshold must be positive when geometry_guard_mode='hard'"
                 )
             return candidate_metric <= geometry_guard_threshold
-        raise ValueError(
-            "geometry_guard_mode must be one of 'off', 'soft', or 'hard'"
-        )
+        raise ValueError("geometry_guard_mode must be one of 'off', 'soft', or 'hard'")
 
     def correspondence_replacement_summary(
         candidate_points: np.ndarray,
@@ -1882,7 +1879,10 @@ def guarded_two_step_bundle_adjustment(
                 int(correspondence_point_frame_indices[point_index])
             ]
             for camera_index in range(len(candidate_cals)):
-                deltas = frame_targets[camera_index] - projected_pixels[point_index, camera_index]
+                deltas = (
+                    frame_targets[camera_index]
+                    - projected_pixels[point_index, camera_index]
+                )
                 squared_distances = np.sum(deltas * deltas, axis=1)
                 nearest_index = int(np.argmin(squared_distances))
                 replacement_ids[point_index, camera_index] = nearest_index
@@ -1924,7 +1924,10 @@ def guarded_two_step_bundle_adjustment(
                 return True
             return candidate_rate <= prior_rate + 1e-12
         if correspondence_guard_mode == "hard":
-            if correspondence_guard_threshold is None or correspondence_guard_threshold <= 0:
+            if (
+                correspondence_guard_threshold is None
+                or correspondence_guard_threshold <= 0
+            ):
                 raise ValueError(
                     "correspondence_guard_threshold must be positive when correspondence_guard_mode='hard'"
                 )
@@ -2014,12 +2017,17 @@ def guarded_two_step_bundle_adjustment(
         )
         pose_ok = pose_ok and pose_correspondence_ok
     else:
-        release_order = [int(camera_index) for camera_index in pose_release_camera_order]
+        release_order = [
+            int(camera_index) for camera_index in pose_release_camera_order
+        ]
         if not release_order:
             raise ValueError("pose_release_camera_order must not be empty")
         if len(set(release_order)) != len(release_order):
             raise ValueError("pose_release_camera_order must not contain duplicates")
-        if any(camera_index < 0 or camera_index >= len(cals) for camera_index in release_order):
+        if any(
+            camera_index < 0 or camera_index >= len(cals)
+            for camera_index in release_order
+        ):
             raise ValueError(
                 "pose_release_camera_order contains an out-of-range camera index"
             )
@@ -2062,7 +2070,9 @@ def guarded_two_step_bundle_adjustment(
                 known_points=known_points,
                 known_point_sigmas=known_point_sigmas,
             )
-            stage_rms = reprojection_rms(observed_pixels, stage_points, stage_cals, cpar)
+            stage_rms = reprojection_rms(
+                observed_pixels, stage_points, stage_cals, cpar
+            )
             stage_ray_convergence = mean_ray_convergence(
                 observed_pixels, stage_cals, cpar
             )

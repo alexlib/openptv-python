@@ -22,7 +22,6 @@ from .orientation import (
     guarded_two_step_bundle_adjustment,
     initialize_bundle_adjustment_points,
     mean_ray_convergence,
-    metric_observations_from_pixels,
     multi_camera_bundle_adjustment,
     reprojection_rms,
 )
@@ -171,7 +170,9 @@ def perturb_calibrations(cals: List[Calibration], scale: float) -> List[Calibrat
     return perturbed
 
 
-def perturb_intrinsic_parameters(cals: List[Calibration], scale: float) -> List[Calibration]:
+def perturb_intrinsic_parameters(
+    cals: List[Calibration], scale: float
+) -> List[Calibration]:
     """Apply deterministic distortion perturbations while keeping poses fixed."""
     perturbed = [clone_calibration(cal) for cal in cals]
     deltas = [
@@ -216,7 +217,9 @@ def build_experiment_start_calibrations(
     for camera_index in fixed_camera_indices:
         if camera_index < 0 or camera_index >= len(working_cals):
             continue
-        working_cals[camera_index].set_pos(reference_cals[camera_index].get_pos().copy())
+        working_cals[camera_index].set_pos(
+            reference_cals[camera_index].get_pos().copy()
+        )
         working_cals[camera_index].set_angles(
             reference_cals[camera_index].get_angles().copy()
         )
@@ -295,7 +298,10 @@ def format_projection_drift(summaries: Sequence[ProjectionDriftSummary] | None) 
     lines = ["camera  mean_px  p95_px  max_px", "------  -------  ------  ------"]
     for item in summaries:
         lines.append(
-            f"{item.camera_index:>6}  {item.mean_distance:>7.3f}  {item.p95_distance:>6.3f}  {item.max_distance:>6.3f}"
+            (
+                f"{item.camera_index:>6}  {item.mean_distance:>7.3f}  "
+                f"{item.p95_distance:>6.3f}  {item.max_distance:>6.3f}"
+            )
         )
     return "\n".join(lines)
 
@@ -321,7 +327,10 @@ def should_block_export_on_geometry(
     if drift_max is None or drift_max <= threshold_px:
         return False, ""
 
-    return True, f"geometry_export_blocked=max_drift={drift_max:.3f}px>{threshold_px:.3f}px"
+    return (
+        True,
+        f"geometry_export_blocked=max_drift={drift_max:.3f}px>{threshold_px:.3f}px",
+    )
 
 
 def discover_num_cams(cal_dir: Path) -> int:
@@ -423,7 +432,10 @@ def summarize_correspondence_replacements(
             int(tracking_data.point_frame_indices[point_index])
         ]
         for camera_index in range(len(cals)):
-            deltas = frame_targets[camera_index] - projected_pixels[point_index, camera_index]
+            deltas = (
+                frame_targets[camera_index]
+                - projected_pixels[point_index, camera_index]
+            )
             squared_distances = np.sum(deltas * deltas, axis=1)
             nearest_index = int(np.argmin(squared_distances))
             replacement_ids[point_index, camera_index] = nearest_index
@@ -497,7 +509,12 @@ def load_case_tracking_data(
             reference_points.append(path_buf[point_num].x.copy())
 
         frame_target_pixels.append(
-            [np.asarray([[target.x, target.y] for target in cam_targets], dtype=float) for cam_targets in targets]
+            [
+                np.asarray(
+                    [[target.x, target.y] for target in cam_targets], dtype=float
+                )
+                for cam_targets in targets
+            ]
         )
 
     if not original_target_ids:
@@ -731,7 +748,12 @@ def format_epipolar_diagnostics(
             f"{item.p95_distance:.6f}",
             f"{item.max_distance:.6f}",
         ]
-        row.extend([f"{100.0 * item.acceptance_rates[threshold]:.1f}%" for threshold in thresholds])
+        row.extend(
+            [
+                f"{100.0 * item.acceptance_rates[threshold]:.1f}%"
+                for threshold in thresholds
+            ]
+        )
         data.append(row)
 
     widths = [len(header) for header in headers]
@@ -740,7 +762,9 @@ def format_epipolar_diagnostics(
             widths[index] = max(widths[index], len(value))
 
     def render_row(values: List[str]) -> str:
-        return "  ".join(value.ljust(widths[index]) for index, value in enumerate(values))
+        return "  ".join(
+            value.ljust(widths[index]) for index, value in enumerate(values)
+        )
 
     separator = "  ".join("-" * width for width in widths)
     lines = [render_row(headers), separator]
@@ -760,7 +784,9 @@ def summarize_quadruplet_sensitivity(
     full_mask = np.all(np.isfinite(observed_pixels), axis=(1, 2))
     full_indices = np.flatnonzero(full_mask)
     if full_indices.size == 0:
-        raise ValueError("No fully observed quadruplets available for sensitivity analysis")
+        raise ValueError(
+            "No fully observed quadruplets available for sensitivity analysis"
+        )
 
     full_points, full_ray_convergence = initialize_bundle_adjustment_points(
         observed_pixels[full_indices],
@@ -774,7 +800,9 @@ def summarize_quadruplet_sensitivity(
         subset_points = []
         subset_rays = []
         for omitted_camera in range(observed_pixels.shape[1]):
-            keep = [cam for cam in range(observed_pixels.shape[1]) if cam != omitted_camera]
+            keep = [
+                cam for cam in range(observed_pixels.shape[1]) if cam != omitted_camera
+            ]
             subset_observed = observed_pixels[point_index : point_index + 1, keep, :]
             subset_cals = [cals[cam] for cam in keep]
             subset_point, subset_ray = initialize_bundle_adjustment_points(
@@ -800,7 +828,9 @@ def summarize_quadruplet_sensitivity(
         max_spread=float(np.max(spreads)),
         mean_full_ray_convergence=float(np.mean(full_ray_convergence)),
         mean_leave_one_out_ray_convergence=float(np.mean(leave_one_out_rays)),
-        worst_point_indices=[int(full_indices[index]) for index in worst_order.tolist()],
+        worst_point_indices=[
+            int(full_indices[index]) for index in worst_order.tolist()
+        ],
     )
 
 
@@ -842,7 +872,9 @@ def format_quadruplet_sensitivity(
             widths[index] = max(widths[index], len(value))
 
     def render_row(values: List[str]) -> str:
-        return "  ".join(value.ljust(widths[index]) for index, value in enumerate(values))
+        return "  ".join(
+            value.ljust(widths[index]) for index, value in enumerate(values)
+        )
 
     separator = "  ".join("-" * width for width in widths)
     lines = [render_row(list(headers)), separator]
@@ -857,11 +889,14 @@ def summarize_fixed_camera_diagnostics(
     diagnostics = []
     for result in results:
         if len(result.fixed_camera_indices) != 2:
-            raise ValueError("Fixed-camera diagnostics require exactly two fixed cameras")
+            raise ValueError(
+                "Fixed-camera diagnostics require exactly two fixed cameras"
+            )
 
         fixed_indices = set(result.fixed_camera_indices)
         fixed_position_shifts = [
-            result.camera_position_shifts[index] for index in result.fixed_camera_indices
+            result.camera_position_shifts[index]
+            for index in result.fixed_camera_indices
         ]
         fixed_angle_shifts = [
             result.camera_angle_shifts[index] for index in result.fixed_camera_indices
@@ -940,7 +975,9 @@ def default_experiments(
     """Return a set of representative BA configurations."""
     staged_order = normalize_staged_release_order(staged_release_order, num_cams)
     staged_fixed = [
-        camera_index for camera_index in range(num_cams) if camera_index != staged_order[0]
+        camera_index
+        for camera_index in range(num_cams)
+        if camera_index != staged_order[0]
     ]
     pose_priors = {
         "x0": 0.5,
@@ -1040,7 +1077,10 @@ def default_experiments(
         ),
         ExperimentSpec(
             name="intrinsics_only",
-            description="Intrinsics-only BA from fixed reference poses with tightly bounded distortion updates",
+            description=(
+                "Intrinsics-only BA from fixed reference poses with tightly "
+                "bounded distortion updates"
+            ),
             mode="multi",
             ba_kwargs={
                 "orient_par": intrinsics_only,
@@ -1554,7 +1594,9 @@ def format_fixed_camera_diagnostics(
             widths[index] = max(widths[index], len(value))
 
     def render_row(values: List[str]) -> str:
-        return "  ".join(value.ljust(widths[index]) for index, value in enumerate(values))
+        return "  ".join(
+            value.ljust(widths[index]) for index, value in enumerate(values)
+        )
 
     separator = "  ".join("-" * width for width in widths)
     lines = [render_row(list(headers)), separator]
@@ -1599,7 +1641,9 @@ def summarize_anchor_participation(
             widths[index] = max(widths[index], len(value))
 
     def render_row(values: List[str]) -> str:
-        return "  ".join(value.ljust(widths[index]) for index, value in enumerate(values))
+        return "  ".join(
+            value.ljust(widths[index]) for index, value in enumerate(values)
+        )
 
     separator = "  ".join("-" * width for width in widths)
     lines = [render_row(list(headers)), separator]
@@ -1735,7 +1779,10 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--diagnose-quadruplets",
         action="store_true",
-        help="Compare leave-one-camera-out quadruplet stability before and after the selected diagnostic experiment.",
+        help=(
+            "Compare leave-one-camera-out quadruplet stability before and after "
+            "the selected diagnostic experiment."
+        ),
     )
     parser.add_argument(
         "--epipolar-curve-points",
@@ -1748,7 +1795,10 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         type=str,
         choices=("auto", "off", "soft", "hard"),
         default="auto",
-        help="Guarded-BA geometry acceptance mode. 'auto' uses 'hard' when cal_ori.par exposes known 3D target points.",
+        help=(
+            "Guarded-BA geometry acceptance mode. 'auto' uses 'hard' when "
+            "cal_ori.par exposes known 3D target points."
+        ),
     )
     parser.add_argument(
         "--geometry-guard-threshold",
@@ -1760,38 +1810,60 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         "--geometry-export-threshold",
         type=float,
         default=None,
-        help="Do not write output case folders whose final calibration-body drift exceeds this many pixels; 0 disables export blocking.",
+        help=(
+            "Do not write output case folders whose final calibration-body "
+            "drift exceeds this many pixels; 0 disables export blocking."
+        ),
     )
     parser.add_argument(
         "--correspondence-guard-mode",
         type=str,
         choices=("auto", "off", "soft", "hard"),
         default="auto",
-        help="Guarded-BA correspondence acceptance mode. 'auto' uses a hard replacement-rate guard when original quadruplet identities are available.",
+        help=(
+            "Guarded-BA correspondence acceptance mode. 'auto' uses a hard "
+            "replacement-rate guard when original quadruplet identities are "
+            "available."
+        ),
     )
     parser.add_argument(
         "--correspondence-guard-threshold",
         type=float,
         default=None,
-        help="Maximum allowed quadruplet replacement rate for hard correspondence guards. If omitted, the demo derives a case-specific threshold from the trusted reference calibration.",
+        help=(
+            "Maximum allowed quadruplet replacement rate for hard "
+            "correspondence guards. If omitted, the demo derives a case-"
+            "specific threshold from the trusted reference calibration."
+        ),
     )
     parser.add_argument(
         "--correspondence-export-threshold",
         type=float,
         default=None,
-        help="Do not write output case folders whose final quadruplet replacement rate exceeds this threshold; 0 disables correspondence-based export blocking.",
+        help=(
+            "Do not write output case folders whose final quadruplet "
+            "replacement rate exceeds this threshold; 0 disables "
+            "correspondence-based export blocking."
+        ),
     )
     parser.add_argument(
         "--staged-release-order",
         type=str,
         default=None,
-        help="Comma-separated 1-based camera release order for staged guarded presets, for example '1,2,3,4'.",
+        help=(
+            "Comma-separated 1-based camera release order for staged guarded "
+            "presets, for example '1,2,3,4'."
+        ),
     )
     parser.add_argument(
         "--staged-ray-slack",
         type=float,
         default=0.0,
-        help="Allow staged guarded pose-release steps to worsen mean ray convergence by up to this amount relative to the last accepted stage.",
+        help=(
+            "Allow staged guarded pose-release steps to worsen mean ray "
+            "convergence by up to this amount relative to the last accepted "
+            "stage."
+        ),
     )
     return parser.parse_args(list(argv) if argv is not None else None)
 
@@ -1836,7 +1908,10 @@ def main(argv: Iterable[str] | None = None) -> int:
         correspondence_guard_mode = "hard" if tracking_data is not None else "off"
     else:
         correspondence_guard_mode = args.correspondence_guard_mode
-    if tracking_data is not None and tracking_data.reference_replacement_rate is not None:
+    if (
+        tracking_data is not None
+        and tracking_data.reference_replacement_rate is not None
+    ):
         auto_correspondence_threshold = min(
             0.25,
             max(0.05, tracking_data.reference_replacement_rate + 0.02),
@@ -1894,15 +1969,25 @@ def main(argv: Iterable[str] | None = None) -> int:
         print("Known-point anchors: disabled")
     if reference_geometry_points is not None:
         print(
-            f"Geometry guard: mode={geometry_guard_mode}, guard_threshold={args.geometry_guard_threshold:.3f}px, export_threshold={geometry_export_threshold:.3f}px"
+            "Geometry guard: "
+            f"mode={geometry_guard_mode}, "
+            f"guard_threshold={args.geometry_guard_threshold:.3f}px, "
+            f"export_threshold={geometry_export_threshold:.3f}px"
         )
     else:
-        print("Geometry guard: unavailable for this case (no known 3D target file found)")
-    if tracking_data is not None and tracking_data.reference_replacement_rate is not None:
+        print(
+            "Geometry guard: unavailable for this case (no known 3D target file found)"
+        )
+    if (
+        tracking_data is not None
+        and tracking_data.reference_replacement_rate is not None
+    ):
         print(
             "Correspondence guard: "
-            f"mode={correspondence_guard_mode}, reference_rate={tracking_data.reference_replacement_rate:.3f}, "
-            f"guard_threshold={correspondence_guard_threshold:.3f}, export_threshold={correspondence_export_threshold:.3f}"
+            f"mode={correspondence_guard_mode}, "
+            f"reference_rate={tracking_data.reference_replacement_rate:.3f}, "
+            f"guard_threshold={correspondence_guard_threshold:.3f}, "
+            f"export_threshold={correspondence_export_threshold:.3f}"
         )
     else:
         print("Correspondence guard: unavailable for this case")
@@ -1945,9 +2030,7 @@ def main(argv: Iterable[str] | None = None) -> int:
             correspondence_export_threshold=correspondence_export_threshold,
             source_case_dir=case_dir,
         )
-        print(
-            f"Fixed-pair diagnostics for {spec.name}: {spec.description}"
-        )
+        print(f"Fixed-pair diagnostics for {spec.name}: {spec.description}")
         print(format_fixed_camera_diagnostics(diagnostics))
         print()
         print("Anchor participation summary")
@@ -1976,13 +2059,15 @@ def main(argv: Iterable[str] | None = None) -> int:
             output_dir=None,
         )
         if diagnostic_result.refined_cals is None:
-            raise ValueError("Diagnostic experiment did not return refined calibrations")
+            raise ValueError(
+                "Diagnostic experiment did not return refined calibrations"
+            )
 
+        print(f"Diagnostics for {spec.name}: {spec.description}")
         print(
-            f"Diagnostics for {spec.name}: {spec.description}"
-        )
-        print(
-            f"Result RMS: {diagnostic_result.final_rms:.6f} px, ray: {diagnostic_result.final_ray_convergence:.6f}, notes: {diagnostic_result.notes}"
+            f"Result RMS: {diagnostic_result.final_rms:.6f} px, "
+            f"ray: {diagnostic_result.final_ray_convergence:.6f}, "
+            f"notes: {diagnostic_result.notes}"
         )
         print()
 
@@ -2022,7 +2107,9 @@ def main(argv: Iterable[str] | None = None) -> int:
                 control,
             )
             print("Quadruplet leave-one-camera-out sensitivity")
-            print(format_quadruplet_sensitivity(baseline_quadruplets, final_quadruplets))
+            print(
+                format_quadruplet_sensitivity(baseline_quadruplets, final_quadruplets)
+            )
 
         return 0
 

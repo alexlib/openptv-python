@@ -146,11 +146,16 @@ def test_synthetic_case_bundle_adjustment_recovers_ground_truth_from_controlled_
     point_init = truth_points + np.array([0.35, -0.25, 0.18])
 
     initial_camera_errors = [
-        np.linalg.norm(start_cals[camera_index].get_pos() - truth_cals[camera_index].get_pos())
+        np.linalg.norm(
+            start_cals[camera_index].get_pos() - truth_cals[camera_index].get_pos()
+        )
         for camera_index in (2, 3)
     ]
     initial_angle_errors = [
-        np.linalg.norm(start_cals[camera_index].get_angles() - truth_cals[camera_index].get_angles())
+        np.linalg.norm(
+            start_cals[camera_index].get_angles()
+            - truth_cals[camera_index].get_angles()
+        )
         for camera_index in (2, 3)
     ]
     initial_point_error = float(
@@ -178,11 +183,16 @@ def test_synthetic_case_bundle_adjustment_recovers_ground_truth_from_controlled_
     )
 
     final_camera_errors = [
-        np.linalg.norm(refined_cals[camera_index].get_pos() - truth_cals[camera_index].get_pos())
+        np.linalg.norm(
+            refined_cals[camera_index].get_pos() - truth_cals[camera_index].get_pos()
+        )
         for camera_index in (2, 3)
     ]
     final_angle_errors = [
-        np.linalg.norm(refined_cals[camera_index].get_angles() - truth_cals[camera_index].get_angles())
+        np.linalg.norm(
+            refined_cals[camera_index].get_angles()
+            - truth_cals[camera_index].get_angles()
+        )
         for camera_index in (2, 3)
     ]
     final_point_error = float(

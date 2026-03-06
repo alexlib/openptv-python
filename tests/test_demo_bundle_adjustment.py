@@ -3,6 +3,7 @@ from pathlib import Path
 
 import numpy as np
 
+from openptv_python.calibration import read_calibration
 from openptv_python.demo_bundle_adjustment import (
     ExperimentResult,
     all_fixed_camera_pairs,
@@ -19,7 +20,6 @@ from openptv_python.demo_bundle_adjustment import (
     summarize_fixed_camera_diagnostics,
     summarize_quadruplet_sensitivity,
 )
-from openptv_python.calibration import read_calibration
 from openptv_python.parameters import ControlPar, read_volume_par
 from openptv_python.tracking_frame_buf import read_path_frame, read_targets
 
@@ -69,14 +69,10 @@ class TestBundleAdjustmentDemo(unittest.TestCase):
             spec for spec in experiments if spec.name == "pose_trf_known_points"
         )
         guarded_spec = next(
-            spec
-            for spec in experiments
-            if spec.name == "guarded_two_step_known_points"
+            spec for spec in experiments if spec.name == "guarded_two_step_known_points"
         )
         staged_spec = next(
-            spec
-            for spec in experiments
-            if spec.name == "guarded_stagewise_release"
+            spec for spec in experiments if spec.name == "guarded_stagewise_release"
         )
         staged_known_spec = next(
             spec
@@ -88,7 +84,9 @@ class TestBundleAdjustmentDemo(unittest.TestCase):
         self.assertIs(guarded_spec.ba_kwargs["known_points"], known_points)
         self.assertEqual(guarded_spec.ba_kwargs["known_point_sigmas"], 0.25)
         self.assertEqual(staged_spec.ba_kwargs["fixed_camera_indices"], [1, 2, 3])
-        self.assertEqual(staged_spec.ba_kwargs["pose_release_camera_order"], [0, 1, 2, 3])
+        self.assertEqual(
+            staged_spec.ba_kwargs["pose_release_camera_order"], [0, 1, 2, 3]
+        )
         self.assertEqual(staged_spec.ba_kwargs["pose_stage_ray_slack"], 0.0)
         self.assertIs(staged_known_spec.ba_kwargs["known_points"], known_points)
         self.assertEqual(staged_known_spec.ba_kwargs["known_point_sigmas"], 0.25)
@@ -126,7 +124,9 @@ class TestBundleAdjustmentDemo(unittest.TestCase):
             guarded_spec.ba_kwargs["correspondence_guard_reference_rate"],
             0.15625,
         )
-        self.assertEqual(staged_spec.ba_kwargs["pose_release_camera_order"], [2, 0, 1, 3])
+        self.assertEqual(
+            staged_spec.ba_kwargs["pose_release_camera_order"], [2, 0, 1, 3]
+        )
         self.assertEqual(staged_spec.ba_kwargs["fixed_camera_indices"], [0, 1, 3])
         self.assertEqual(staged_spec.ba_kwargs["pose_stage_ray_slack"], 0.002)
 
@@ -242,7 +242,9 @@ class TestBundleAdjustmentDemo(unittest.TestCase):
             for cam_num in range(1, 5)
         ]
 
-        cor_buf, path_buf = read_path_frame(str(cavity_dir / "res_orig/rt_is"), "", "", 10001)
+        cor_buf, path_buf = read_path_frame(
+            str(cavity_dir / "res_orig/rt_is"), "", "", 10001
+        )
         targets = [
             read_targets(str(cavity_dir / f"img_orig/cam{cam_num}.%05d"), 10001)
             for cam_num in range(1, 5)
@@ -283,7 +285,9 @@ class TestBundleAdjustmentDemo(unittest.TestCase):
             max(item.max_distance for item in baseline_epipolar),
         )
         self.assertGreater(perturbed_quad.max_spread, baseline_quad.max_spread)
-        self.assertIn("baseline", format_quadruplet_sensitivity(baseline_quad, perturbed_quad))
+        self.assertIn(
+            "baseline", format_quadruplet_sensitivity(baseline_quad, perturbed_quad)
+        )
 
 
 if __name__ == "__main__":

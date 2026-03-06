@@ -50,11 +50,12 @@ where $\\theta_j$ denotes the active calibration parameters for camera $j$.
 The solver minimizes a robust or linear least-squares objective
 
 $$
-\min_{\Theta, X}
-\sum_{i,j} \rho\left(\left\|W r_{ij}\right\|^2\right)
-+ \sum_k \left(\frac{p_k - p_{k,0}}{\sigma_k}\right)^2
-+ \sum_{m \in \mathcal{M}} \left\|\frac{X_m - X_m^*}{\sigma^{(X)}_m}\right\|^2.
-$$
+\\min\_{\\Theta, X}
+\\sum\_{i,j} \\rho\\left(\\left|W r\_{ij}\\right|^2\\right)
+
+- \\sum_k \\left(\\frac{p_k - p\_{k,0}}{\\sigma_k}\\right)^2
+- \\sum\_{m \\in \\mathcal{M}} \\left|\\frac{X_m - X_m^\*}{\\sigma^{(X)}\_m}\\right|^2.
+  $$
 
 with:
 

@@ -21,7 +21,13 @@ from .orientation import (
 )
 from .parameters import ControlPar, OrientPar, VolumePar, read_volume_par
 from .sortgrid import read_sortgrid_par
-from .tracking_frame_buf import Pathinfo, Target, n_tupel_dtype, write_path_frame, write_targets
+from .tracking_frame_buf import (
+    Pathinfo,
+    Target,
+    n_tupel_dtype,
+    write_path_frame,
+    write_targets,
+)
 from .trafo import arr_metric_to_pixel
 
 DEFAULT_SOURCE_CASE = Path("tests/testing_fodder/test_cavity")
@@ -68,7 +74,9 @@ def make_target(x: float, y: float, pnr: int) -> Target:
     )
 
 
-def camera_points_in_bounds(pixel_points: np.ndarray, cpar: ControlPar, margin: float = 8.0) -> np.ndarray:
+def camera_points_in_bounds(
+    pixel_points: np.ndarray, cpar: ControlPar, margin: float = 8.0
+) -> np.ndarray:
     """Return a mask of points lying safely inside the sensor bounds."""
     return (
         (pixel_points[:, 0] >= margin)
@@ -91,7 +99,9 @@ def z_bounds_at_x(x_coord: float, vpar: VolumePar) -> tuple[float, float]:
     return float(z_min), float(z_max)
 
 
-def project_pixels(points_3d: np.ndarray, cals: Sequence[Calibration], cpar: ControlPar) -> np.ndarray:
+def project_pixels(
+    points_3d: np.ndarray, cals: Sequence[Calibration], cpar: ControlPar
+) -> np.ndarray:
     """Project 3D points into all cameras in pixel coordinates."""
     observed = np.empty((points_3d.shape[0], len(cals), 2), dtype=np.float64)
     for cam_index, cal in enumerate(cals):
@@ -119,7 +129,9 @@ def select_visible_points(
     return visible_points[:count]
 
 
-def build_calibration_body(vpar: VolumePar, cals: Sequence[Calibration], cpar: ControlPar) -> np.ndarray:
+def build_calibration_body(
+    vpar: VolumePar, cals: Sequence[Calibration], cpar: ControlPar
+) -> np.ndarray:
     """Build a structured 3D calibration body visible in all cameras."""
     xs = np.linspace(vpar.x_lay[0] + 4.0, vpar.x_lay[1] - 4.0, 8)
     ys = np.linspace(-16.0, 16.0, 6)
@@ -152,7 +164,10 @@ def generate_particle_cloud(
         z_coord = float(rng.uniform(z_min + 2.0, z_max - 2.0))
         point = np.asarray([[x_coord, y_coord, z_coord]], dtype=np.float64)
         projected = project_pixels(point, cals, cpar)[0]
-        if all(camera_points_in_bounds(projected[None, cam_index, :], cpar)[0] for cam_index in range(len(cals))):
+        if all(
+            camera_points_in_bounds(projected[None, cam_index, :], cpar)[0]
+            for cam_index in range(len(cals))
+        ):
             accepted.append(point[0])
     return np.asarray(accepted, dtype=np.float64)
 
@@ -165,7 +180,12 @@ def shuffled_targets_from_pixels(
     """Shuffle projected pixels into a target list and return point-to-target indices."""
     noisy_pixels = pixel_points + rng.normal(0.0, noise_sigma, size=pixel_points.shape)
     order = rng.permutation(pixel_points.shape[0])
-    targets = [make_target(noisy_pixels[target_index, 0], noisy_pixels[target_index, 1], list_index) for list_index, target_index in enumerate(order)]
+    targets = [
+        make_target(
+            noisy_pixels[target_index, 0], noisy_pixels[target_index, 1], list_index
+        )
+        for list_index, target_index in enumerate(order)
+    ]
     point_to_target = np.empty(pixel_points.shape[0], dtype=np.int32)
     for list_index, target_index in enumerate(order):
         point_to_target[target_index] = list_index
@@ -174,11 +194,16 @@ def shuffled_targets_from_pixels(
 
 def write_calibration_body_points(points: np.ndarray, output_file: Path) -> None:
     """Write a calblock-compatible calibration body file."""
-    lines = [f"{index + 1:11d}{point[0]:11.3f}{point[1]:11.3f}{point[2]:11.3f}" for index, point in enumerate(points)]
+    lines = [
+        f"{index + 1:11d}{point[0]:11.3f}{point[1]:11.3f}{point[2]:11.3f}"
+        for index, point in enumerate(points)
+    ]
     output_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def perturb_calibration_for_recovery(cal: Calibration, camera_index: int) -> Calibration:
+def perturb_calibration_for_recovery(
+    cal: Calibration, camera_index: int
+) -> Calibration:
     """Create a deterministic seed calibration for full_calibration recovery."""
     trial = clone_calibration(cal)
     position_deltas = [
@@ -229,7 +254,9 @@ def recover_calibrations_from_body(
     seed_indices = select_external_seed_subset(ref_points)
 
     for camera_index, truth_cal in enumerate(truth_cals, start=1):
-        projected = arr_metric_to_pixel(image_coordinates(ref_points, truth_cal, cpar.mm), cpar)
+        projected = arr_metric_to_pixel(
+            image_coordinates(ref_points, truth_cal, cpar.mm), cpar
+        )
         targets, _ = shuffled_targets_from_pixels(projected, rng, noise_sigma=0.0)
         write_targets(
             targets,
@@ -245,7 +272,9 @@ def recover_calibrations_from_body(
             projected[seed_indices],
             cpar,
         )
-        sorted_targets = match_detection_to_ref(seed, ref_points, targets, cpar, sortgrid_eps)
+        sorted_targets = match_detection_to_ref(
+            seed, ref_points, targets, cpar, sortgrid_eps
+        )
         full_calibration(
             seed,
             ref_points,
@@ -266,8 +295,12 @@ def recover_calibrations_from_body(
             truth_cal_dir / f"cam{camera_index}.tif.addpar",
         )
 
-        position_errors.append(float(np.linalg.norm(seed.get_pos() - truth_cal.get_pos())))
-        angle_errors.append(float(np.linalg.norm(seed.get_angles() - truth_cal.get_angles())))
+        position_errors.append(
+            float(np.linalg.norm(seed.get_pos() - truth_cal.get_pos()))
+        )
+        angle_errors.append(
+            float(np.linalg.norm(seed.get_angles() - truth_cal.get_angles()))
+        )
 
     return recovered, position_errors, angle_errors
 
@@ -283,7 +316,9 @@ def build_frame_targets_and_paths(
     per_camera_targets = []
     per_camera_mapping = []
     for cam_index in range(len(cals)):
-        targets, point_to_target = shuffled_targets_from_pixels(projected[:, cam_index, :], rng, noise_sigma=0.08)
+        targets, point_to_target = shuffled_targets_from_pixels(
+            projected[:, cam_index, :], rng, noise_sigma=0.08
+        )
         per_camera_targets.append(targets)
         per_camera_mapping.append(point_to_target)
 
@@ -291,15 +326,24 @@ def build_frame_targets_and_paths(
     for point_index in range(frame_points.shape[0]):
         for cam_index in range(len(cals)):
             target_index = per_camera_mapping[cam_index][point_index]
-            observed_pixels[point_index, cam_index, 0] = per_camera_targets[cam_index][target_index].x
-            observed_pixels[point_index, cam_index, 1] = per_camera_targets[cam_index][target_index].y
+            observed_pixels[point_index, cam_index, 0] = per_camera_targets[cam_index][
+                target_index
+            ].x
+            observed_pixels[point_index, cam_index, 1] = per_camera_targets[cam_index][
+                target_index
+            ].y
 
-    initial_points, _ = initialize_bundle_adjustment_points(observed_pixels, list(cals), cpar)
+    initial_points, _ = initialize_bundle_adjustment_points(
+        observed_pixels, list(cals), cpar
+    )
     cor_buf = np.recarray((frame_points.shape[0],), dtype=n_tupel_dtype)
     path_buf = [Pathinfo() for _ in range(frame_points.shape[0])]
     for point_index in range(frame_points.shape[0]):
         cor_buf[point_index].p = np.array(
-            [per_camera_mapping[cam_index][point_index] for cam_index in range(len(cals))],
+            [
+                per_camera_mapping[cam_index][point_index]
+                for cam_index in range(len(cals))
+            ],
             dtype=np.int32,
         )
         cor_buf[point_index].corr = 1.0
@@ -339,7 +383,8 @@ def write_case_readme(output_case: Path) -> None:
     """Document the generated synthetic case contents."""
     text = """# Synthetic Cavity Case
 
-This case is generated deterministically from the geometry of `test_cavity`, but all observations come from known ground truth.
+This case is generated deterministically from the geometry of `test_cavity`,
+but all observations come from known ground truth.
 
 Contents:
 
