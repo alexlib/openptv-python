@@ -1369,11 +1369,15 @@ def _bundle_adjustment_jacobian_sparsity(
     point_offset: int,
     optimize_points: bool,
     active_priors: List[Tuple[int, int, float, float]],
+    active_known_points: List[Tuple[int, np.ndarray, np.ndarray]],
 ) -> scipy.sparse.csr_matrix:
     """Build the Jacobian sparsity pattern for finite-difference bundle adjustment."""
     num_observation_residuals = int(np.count_nonzero(obs_mask) * 2)
     num_prior_residuals = len(active_priors)
-    total_residuals = num_observation_residuals + num_prior_residuals
+    num_known_point_residuals = len(active_known_points) * 3
+    total_residuals = (
+        num_observation_residuals + num_prior_residuals + num_known_point_residuals
+    )
     total_parameters = point_offset + (obs_mask.shape[0] * 3 if optimize_points else 0)
 
     sparsity = scipy.sparse.lil_matrix(
@@ -1401,12 +1405,59 @@ def _bundle_adjustment_jacobian_sparsity(
 
             row += 2
 
-    for cam_index, param_index, _sigma, _base_value in active_priors:
+    for cam_index, param_index, _prior_sigma, _base_value in active_priors:
         cam_start = cam_index * camera_block_size
         sparsity[row, cam_start + param_index] = 1
         row += 1
 
+    if optimize_points:
+        for point_index, _target, _point_sigma in active_known_points:
+            point_start = point_offset + point_index * 3
+            sparsity[row : row + 3, point_start : point_start + 3] = 1
+            row += 3
+
     return sparsity.tocsr()
+
+
+def _normalize_known_point_constraints(
+    num_points: int,
+    known_points: Optional[Dict[int, np.ndarray]],
+    known_point_sigmas: Optional[float | np.ndarray],
+) -> List[Tuple[int, np.ndarray, np.ndarray]]:
+    """Normalize known-point priors into indexed target and sigma vectors."""
+    if known_points is None:
+        return []
+
+    sigma_source: float | np.ndarray
+    sigma_source = 1.0 if known_point_sigmas is None else known_point_sigmas
+    sigma_array = np.asarray(sigma_source, dtype=np.float64)
+
+    constraints = []
+    for point_index in sorted(known_points):
+        if point_index < 0 or point_index >= num_points:
+            raise ValueError("known_points contains an out-of-range point index")
+
+        target = np.asarray(known_points[point_index], dtype=np.float64)
+        if target.shape != (3,):
+            raise ValueError("Each known_points entry must have shape (3,)")
+
+        if sigma_array.ndim == 0:
+            sigma = np.full(3, float(sigma_array), dtype=np.float64)
+        elif sigma_array.shape == (3,):
+            sigma = sigma_array.copy()
+        elif sigma_array.shape == (num_points, 3):
+            sigma = sigma_array[point_index].copy()
+        else:
+            raise ValueError(
+                "known_point_sigmas must be a scalar, shape (3,), or shape (num_points, 3)"
+            )
+
+        if np.any(sigma <= 0):
+            raise ValueError("known_point_sigmas must be strictly positive")
+
+        constraints.append((point_index, target, sigma))
+
+    return constraints
 
 
 def multi_camera_bundle_adjustment(
@@ -1425,6 +1476,8 @@ def multi_camera_bundle_adjustment(
     max_nfev: Optional[int] = None,
     optimize_extrinsics: bool = True,
     optimize_points: bool = True,
+    known_points: Optional[Dict[int, np.ndarray]] = None,
+    known_point_sigmas: Optional[float | np.ndarray] = None,
     ftol: Optional[float] = None,
     xtol: Optional[float] = None,
     gtol: Optional[float] = None,
@@ -1473,6 +1526,10 @@ def multi_camera_bundle_adjustment(
     if not optimize_points and not optimized_cam_indices:
         raise ValueError(
             "Bundle adjustment must optimize points or at least one camera"
+        )
+    if known_points is not None and not optimize_points:
+        raise ValueError(
+            "known_points constraints require optimize_points=True in the current implementation"
         )
 
     # Refining both 3D points and camera poses from image observations has a similarity
@@ -1551,6 +1608,12 @@ def multi_camera_bundle_adjustment(
                 continue
             active_priors.append((cam_index, param_index, sigma, base_value))
 
+    active_known_points = _normalize_known_point_constraints(
+        num_points,
+        known_points,
+        known_point_sigmas,
+    )
+
     camera_lower, camera_upper = _expand_parameter_limits(
         parameter_names,
         parameter_bounds,
@@ -1592,7 +1655,11 @@ def multi_camera_bundle_adjustment(
 
     def residual_vector(params: np.ndarray) -> np.ndarray:
         trial_cals, points = unpack_parameters(params)
-        residuals = np.empty(int(np.count_nonzero(obs_mask) * 2) + len(active_priors))
+        residuals = np.empty(
+            int(np.count_nonzero(obs_mask) * 2)
+            + len(active_priors)
+            + 3 * len(active_known_points)
+        )
         row = 0
 
         for cam, point_indices in enumerate(observation_point_indices):
@@ -1614,6 +1681,10 @@ def multi_camera_bundle_adjustment(
             value = params[cam_index * camera_block_size + param_index]
             residuals[row] = (value - base_value) / sigma
             row += 1
+
+        for point_index, target, point_sigma in active_known_points:
+            residuals[row : row + 3] = (points[point_index] - target) / point_sigma
+            row += 3
 
         return residuals
 
@@ -1639,6 +1710,7 @@ def multi_camera_bundle_adjustment(
             point_offset,
             optimize_points,
             active_priors,
+            active_known_points,
         )
     if ftol is not None:
         least_squares_kwargs["ftol"] = ftol
@@ -1663,6 +1735,9 @@ def multi_camera_bundle_adjustment(
         observed_pixels, refined_points, refined_cals, cpar
     )
     result["optimized_camera_indices"] = optimized_cam_indices
+    result["known_point_indices"] = [
+        point_index for point_index, _, _ in active_known_points
+    ]
 
     return refined_cals, refined_points, result
 
@@ -1691,10 +1766,80 @@ def guarded_two_step_bundle_adjustment(
     intrinsic_gtol: Optional[float] = 1e-12,
     pose_optimize_points: bool = True,
     intrinsic_optimize_points: bool = True,
+    known_points: Optional[Dict[int, np.ndarray]] = None,
+    known_point_sigmas: Optional[float | np.ndarray] = None,
+    geometry_reference_points: Optional[np.ndarray] = None,
+    geometry_reference_cals: Optional[List[Calibration]] = None,
+    geometry_guard_mode: str = "off",
+    geometry_guard_threshold: Optional[float] = None,
     reject_worse_solution: bool = True,
     reject_on_ray_convergence: bool = True,
 ) -> Tuple[List[Calibration], np.ndarray, Dict[str, object]]:
     """Run pose-only BA then tightly constrained intrinsics BA with acceptance checks."""
+
+    def projection_drift_summaries(
+        reference_cals: List[Calibration],
+        candidate_cals: List[Calibration],
+        reference_points: Optional[np.ndarray],
+    ) -> Optional[List[Dict[str, float]]]:
+        if reference_points is None:
+            return None
+
+        summaries: List[Dict[str, float]] = []
+        for camera_index, (reference_cal, candidate_cal) in enumerate(
+            zip(reference_cals, candidate_cals),
+            start=1,
+        ):
+            reference_pixels = []
+            candidate_pixels = []
+            for point in reference_points:
+                ref_x, ref_y = img_coord(point, reference_cal, cpar.mm)
+                cand_x, cand_y = img_coord(point, candidate_cal, cpar.mm)
+                reference_pixels.append(metric_to_pixel(ref_x, ref_y, cpar))
+                candidate_pixels.append(metric_to_pixel(cand_x, cand_y, cpar))
+
+            displacement = np.linalg.norm(
+                np.asarray(candidate_pixels) - np.asarray(reference_pixels),
+                axis=1,
+            )
+            summaries.append(
+                {
+                    "camera_index": float(camera_index),
+                    "mean_distance": float(displacement.mean()),
+                    "p95_distance": float(np.percentile(displacement, 95.0)),
+                    "max_distance": float(displacement.max()),
+                }
+            )
+
+        return summaries
+
+    def max_projection_drift(
+        summaries: Optional[List[Dict[str, float]]],
+    ) -> Optional[float]:
+        if not summaries:
+            return None
+        return max(item["max_distance"] for item in summaries)
+
+    def geometry_stage_ok(
+        candidate_metric: Optional[float],
+        baseline_metric: Optional[float],
+    ) -> bool:
+        if geometry_guard_mode == "off" or candidate_metric is None:
+            return True
+        if geometry_guard_mode == "soft":
+            if baseline_metric is None:
+                return True
+            return candidate_metric <= baseline_metric + 1e-12
+        if geometry_guard_mode == "hard":
+            if geometry_guard_threshold is None or geometry_guard_threshold <= 0:
+                raise ValueError(
+                    "geometry_guard_threshold must be positive when geometry_guard_mode='hard'"
+                )
+            return candidate_metric <= geometry_guard_threshold
+        raise ValueError(
+            "geometry_guard_mode must be one of 'off', 'soft', or 'hard'"
+        )
+
     base_cals = [_clone_calibration(cal) for cal in cals]
     if point_init is None:
         base_points, _ = initialize_bundle_adjustment_points(
@@ -1707,6 +1852,15 @@ def guarded_two_step_bundle_adjustment(
 
     baseline_rms = reprojection_rms(observed_pixels, base_points, base_cals, cpar)
     baseline_ray_convergence = mean_ray_convergence(observed_pixels, base_cals, cpar)
+    if geometry_reference_cals is None:
+        geometry_reference_cals = [_clone_calibration(cal) for cal in base_cals]
+
+    baseline_geometry = projection_drift_summaries(
+        geometry_reference_cals,
+        base_cals,
+        geometry_reference_points,
+    )
+    baseline_geometry_max = max_projection_drift(baseline_geometry)
 
     pose_cals, pose_points, pose_result = multi_camera_bundle_adjustment(
         observed_pixels,
@@ -1722,9 +1876,17 @@ def guarded_two_step_bundle_adjustment(
         max_nfev=pose_max_nfev,
         optimize_extrinsics=True,
         optimize_points=pose_optimize_points,
+        known_points=known_points,
+        known_point_sigmas=known_point_sigmas,
     )
     pose_rms = reprojection_rms(observed_pixels, pose_points, pose_cals, cpar)
     pose_ray_convergence = mean_ray_convergence(observed_pixels, pose_cals, cpar)
+    pose_geometry = projection_drift_summaries(
+        geometry_reference_cals,
+        pose_cals,
+        geometry_reference_points,
+    )
+    pose_geometry_max = max_projection_drift(pose_geometry)
 
     intrinsic_fixed = list(range(len(cals)))
     intrinsic_cals, intrinsic_points, intrinsic_result = multi_camera_bundle_adjustment(
@@ -1741,6 +1903,8 @@ def guarded_two_step_bundle_adjustment(
         max_nfev=intrinsic_max_nfev,
         optimize_extrinsics=False,
         optimize_points=intrinsic_optimize_points,
+        known_points=known_points,
+        known_point_sigmas=known_point_sigmas,
         ftol=intrinsic_ftol,
         xtol=intrinsic_xtol,
         gtol=intrinsic_gtol,
@@ -1751,6 +1915,12 @@ def guarded_two_step_bundle_adjustment(
     intrinsic_ray_convergence = mean_ray_convergence(
         observed_pixels, intrinsic_cals, cpar
     )
+    intrinsic_geometry = projection_drift_summaries(
+        geometry_reference_cals,
+        intrinsic_cals,
+        geometry_reference_points,
+    )
+    intrinsic_geometry_max = max_projection_drift(intrinsic_geometry)
 
     accepted_stage = "intrinsics"
     final_cals = intrinsic_cals
@@ -1762,10 +1932,17 @@ def guarded_two_step_bundle_adjustment(
         not reject_on_ray_convergence
         or pose_ray_convergence <= baseline_ray_convergence
     )
+    pose_geometry_ok = geometry_stage_ok(pose_geometry_max, baseline_geometry_max)
+    pose_ok = pose_ok and pose_geometry_ok
     intrinsic_ok = intrinsic_rms <= pose_rms and (
         not reject_on_ray_convergence
         or intrinsic_ray_convergence <= pose_ray_convergence
     )
+    intrinsic_geometry_ok = geometry_stage_ok(
+        intrinsic_geometry_max,
+        pose_geometry_max,
+    )
+    intrinsic_ok = intrinsic_ok and intrinsic_geometry_ok
 
     if reject_worse_solution:
         if not pose_ok:
@@ -1786,14 +1963,24 @@ def guarded_two_step_bundle_adjustment(
         "baseline_mean_ray_convergence": baseline_ray_convergence,
         "baseline_cals": base_cals,
         "baseline_points": base_points,
+        "baseline_geometry": baseline_geometry,
+        "baseline_geometry_max": baseline_geometry_max,
         "pose_reprojection_rms": pose_rms,
         "pose_mean_ray_convergence": pose_ray_convergence,
         "pose_cals": pose_cals,
         "pose_points": pose_points,
+        "pose_geometry": pose_geometry,
+        "pose_geometry_max": pose_geometry_max,
+        "pose_geometry_ok": pose_geometry_ok,
         "intrinsic_reprojection_rms": intrinsic_rms,
         "intrinsic_mean_ray_convergence": intrinsic_ray_convergence,
         "intrinsic_cals": intrinsic_cals,
         "intrinsic_points": intrinsic_points,
+        "intrinsic_geometry": intrinsic_geometry,
+        "intrinsic_geometry_max": intrinsic_geometry_max,
+        "intrinsic_geometry_ok": intrinsic_geometry_ok,
+        "geometry_guard_mode": geometry_guard_mode,
+        "geometry_guard_threshold": geometry_guard_threshold,
         "accepted_stage": accepted_stage,
         "final_reprojection_rms": final_rms,
         "final_mean_ray_convergence": final_ray_convergence,
