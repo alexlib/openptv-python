@@ -27,11 +27,13 @@ release = openptv_python.__version__
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
-    "autoapi.extension",
     "myst_parser",
     "sphinx.ext.autodoc",
     "sphinx.ext.napoleon",
 ]
+
+if os.environ.get("OPENPTV_ENABLE_AUTOAPI") == "1":
+    extensions.append("autoapi.extension")
 
 # autodoc configuration
 autodoc_typehints = "none"

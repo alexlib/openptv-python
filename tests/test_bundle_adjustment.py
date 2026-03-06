@@ -1,5 +1,6 @@
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 
@@ -237,78 +238,107 @@ class TestBundleAdjustment(unittest.TestCase):
             )
 
     def test_guarded_two_step_bundle_adjustment_rejects_bad_intrinsics_stage(self):
-        cavity_dir = Path("tests/testing_fodder/test_cavity")
-        control = ControlPar(4).from_file(cavity_dir / "parameters/ptv.par")
-        true_cals = [
-            read_calibration(
-                cavity_dir / f"cal/cam{cam_num}.tif.ori",
-                cavity_dir / f"cal/cam{cam_num}.tif.addpar",
-            )
-            for cam_num in range(1, 5)
-        ]
-        observed_pixels, point_init = self.cavity_quadruplet_observations(
-            cavity_dir, control
+        points = np.array(
+            [
+                [-10.0, -10.0, 0.0],
+                [10.0, -10.0, 1.0],
+                [-10.0, 10.0, -1.0],
+                [10.0, 10.0, 0.5],
+                [0.0, 0.0, 3.0],
+                [6.0, -4.0, -2.0],
+            ],
+            dtype=float,
         )
-        start_cals = self.lightly_perturb_calibrations(true_cals)
+        observed_pixels = np.empty((len(points), 4, 2), dtype=float)
+        for cam_num, cal in enumerate(self.true_cals):
+            observed_pixels[:, cam_num, :] = arr_metric_to_pixel(
+                image_coordinates(points, cal, self.control.mm), self.control
+            )
+
+        start_cals = self.lightly_perturb_calibrations(self.true_cals)
+        pose_cals = [self.clone_calibration(cal) for cal in self.true_cals]
+        bad_intrinsic_cals = [self.clone_calibration(cal) for cal in pose_cals]
+        for cal in bad_intrinsic_cals[1:]:
+            cal.added_par[0] += 1e-3
+            cal.added_par[3] += 5e-4
+            cal.added_par[4] -= 5e-4
 
         intrinsics = OrientPar()
         intrinsics.k1flag = 1
         intrinsics.p1flag = 1
         intrinsics.p2flag = 1
 
-        final_cals, final_points, summary = guarded_two_step_bundle_adjustment(
-            observed_pixels,
-            start_cals,
-            control,
-            OrientPar(),
-            intrinsics,
-            point_init=point_init,
-            fixed_camera_indices=[0, 1],
-            pose_prior_sigmas={
-                "x0": 0.5,
-                "y0": 0.5,
-                "z0": 0.5,
-                "omega": 0.005,
-                "phi": 0.005,
-                "kappa": 0.005,
-            },
-            pose_parameter_bounds={
-                "x0": (-2.0, 2.0),
-                "y0": (-2.0, 2.0),
-                "z0": (-2.0, 2.0),
-                "omega": (-0.02, 0.02),
-                "phi": (-0.02, 0.02),
-                "kappa": (-0.02, 0.02),
-            },
-            pose_max_nfev=60,
-            intrinsic_prior_sigmas={
-                "k1": 1e-12,
-                "k2": 1e-12,
-                "k3": 1e-12,
-                "p1": 1e-12,
-                "p2": 1e-12,
-                "scx": 1e-12,
-                "she": 1e-12,
-                "cc": 1e-12,
-                "xh": 1e-12,
-                "yh": 1e-12,
-            },
-            intrinsic_parameter_bounds={
-                "k1": (-1e-10, 1e-10),
-                "k2": (-1e-10, 1e-10),
-                "k3": (-1e-10, 1e-10),
-                "p1": (-1e-10, 1e-10),
-                "p2": (-1e-10, 1e-10),
-                "scx": (-1e-12, 1e-12),
-                "she": (-1e-12, 1e-12),
-                "cc": (-1e-12, 1e-12),
-                "xh": (-1e-12, 1e-12),
-                "yh": (-1e-12, 1e-12),
-            },
-            intrinsic_max_nfev=20,
-        )
+        with patch(
+            "openptv_python.orientation.multi_camera_bundle_adjustment",
+            side_effect=[
+                (pose_cals, points.copy(), {"success": True, "stage": "pose"}),
+                (
+                    bad_intrinsic_cals,
+                    points.copy(),
+                    {"success": True, "stage": "intrinsics"},
+                ),
+            ],
+        ) as mocked_adjustment:
+            final_cals, final_points, summary = guarded_two_step_bundle_adjustment(
+                observed_pixels,
+                start_cals,
+                self.control,
+                OrientPar(),
+                intrinsics,
+                point_init=points,
+                fixed_camera_indices=[0, 1],
+                pose_prior_sigmas={
+                    "x0": 0.5,
+                    "y0": 0.5,
+                    "z0": 0.5,
+                    "omega": 0.005,
+                    "phi": 0.005,
+                    "kappa": 0.005,
+                },
+                pose_parameter_bounds={
+                    "x0": (-2.0, 2.0),
+                    "y0": (-2.0, 2.0),
+                    "z0": (-2.0, 2.0),
+                    "omega": (-0.02, 0.02),
+                    "phi": (-0.02, 0.02),
+                    "kappa": (-0.02, 0.02),
+                },
+                pose_max_nfev=60,
+                intrinsic_prior_sigmas={
+                    "k1": 1e-12,
+                    "k2": 1e-12,
+                    "k3": 1e-12,
+                    "p1": 1e-12,
+                    "p2": 1e-12,
+                    "scx": 1e-12,
+                    "she": 1e-12,
+                    "cc": 1e-12,
+                    "xh": 1e-12,
+                    "yh": 1e-12,
+                },
+                intrinsic_parameter_bounds={
+                    "k1": (-1e-10, 1e-10),
+                    "k2": (-1e-10, 1e-10),
+                    "k3": (-1e-10, 1e-10),
+                    "p1": (-1e-10, 1e-10),
+                    "p2": (-1e-10, 1e-10),
+                    "scx": (-1e-12, 1e-12),
+                    "she": (-1e-12, 1e-12),
+                    "cc": (-1e-12, 1e-12),
+                    "xh": (-1e-12, 1e-12),
+                    "yh": (-1e-12, 1e-12),
+                },
+                intrinsic_max_nfev=20,
+            )
 
-        self.assertIn(summary["accepted_stage"], {"baseline", "pose"})
+        self.assertEqual(mocked_adjustment.call_count, 2)
+        self.assertEqual(summary["accepted_stage"], "pose")
+        self.assertLess(
+            summary["pose_reprojection_rms"], summary["baseline_reprojection_rms"]
+        )
+        self.assertGreater(
+            summary["intrinsic_reprojection_rms"], summary["pose_reprojection_rms"]
+        )
         self.assertLessEqual(
             summary["final_reprojection_rms"], summary["baseline_reprojection_rms"]
         )
@@ -317,7 +347,7 @@ class TestBundleAdjustment(unittest.TestCase):
             summary["baseline_mean_ray_convergence"],
         )
         np.testing.assert_allclose(
-            reprojection_rms(observed_pixels, final_points, final_cals, control),
+            reprojection_rms(observed_pixels, final_points, final_cals, self.control),
             summary["final_reprojection_rms"],
         )
 

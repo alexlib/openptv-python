@@ -11,14 +11,20 @@ from openptv_python.constants import COORD_UNUSED
 from .calibration import Calibration
 from .constants import CONVERGENCE, IDT, NPAR, NUM_ITER, POS_INF
 from .epi import epi_mm_2D
-from .imgcoord import img_coord
+from .imgcoord import image_coordinates, img_coord
 
 # from .lsqadj import ata, atl, matinv, matmul
 from .parameters import ControlPar, MultimediaPar, OrientPar, VolumePar
 from .ray_tracing import ray_tracing
 from .sortgrid import sortgrid
 from .tracking_frame_buf import Target
-from .trafo import correct_brown_affine, dist_to_flat, metric_to_pixel, pixel_to_metric
+from .trafo import (
+    arr_metric_to_pixel,
+    correct_brown_affine,
+    dist_to_flat,
+    metric_to_pixel,
+    pixel_to_metric,
+)
 from .vec_utils import unit_vector, vec_norm, vec_set
 
 
@@ -1355,6 +1361,54 @@ def _expand_parameter_limits(
     return np.asarray(lower, dtype=np.float64), np.asarray(upper, dtype=np.float64)
 
 
+def _bundle_adjustment_jacobian_sparsity(
+    obs_mask: np.ndarray,
+    num_cams: int,
+    optimized_cam_indices: List[int],
+    camera_block_size: int,
+    point_offset: int,
+    optimize_points: bool,
+    active_priors: List[Tuple[int, int, float, float]],
+) -> scipy.sparse.csr_matrix:
+    """Build the Jacobian sparsity pattern for finite-difference bundle adjustment."""
+    num_observation_residuals = int(np.count_nonzero(obs_mask) * 2)
+    num_prior_residuals = len(active_priors)
+    total_residuals = num_observation_residuals + num_prior_residuals
+    total_parameters = point_offset + (obs_mask.shape[0] * 3 if optimize_points else 0)
+
+    sparsity = scipy.sparse.lil_matrix(
+        (total_residuals, total_parameters),
+        dtype=np.int8,
+    )
+    optimized_cam_lookup = {
+        cam: cam_index for cam_index, cam in enumerate(optimized_cam_indices)
+    }
+
+    row = 0
+    for point_index in range(obs_mask.shape[0]):
+        point_start = point_offset + point_index * 3
+        for cam in range(num_cams):
+            if not obs_mask[point_index, cam]:
+                continue
+
+            cam_index = optimized_cam_lookup.get(cam)
+            if cam_index is not None and camera_block_size > 0:
+                cam_start = cam_index * camera_block_size
+                sparsity[row : row + 2, cam_start : cam_start + camera_block_size] = 1
+
+            if optimize_points:
+                sparsity[row : row + 2, point_start : point_start + 3] = 1
+
+            row += 2
+
+    for cam_index, param_index, _sigma, _base_value in active_priors:
+        cam_start = cam_index * camera_block_size
+        sparsity[row, cam_start + param_index] = 1
+        row += 1
+
+    return sparsity.tocsr()
+
+
 def multi_camera_bundle_adjustment(
     observed_pixels: np.ndarray,
     cals: List[Calibration],
@@ -1482,6 +1536,20 @@ def multi_camera_bundle_adjustment(
         x0 = np.empty(0, dtype=np.float64)
 
     point_offset = camera_block_size * len(optimized_cam_indices)
+    obs_mask = np.all(np.isfinite(observed_pixels), axis=2)
+    observation_point_indices = [
+        np.flatnonzero(obs_mask[:, cam]) for cam in range(num_cams)
+    ]
+
+    active_priors = []
+    for cam_index, _cam in enumerate(optimized_cam_indices):
+        for param_index, (name, base_value) in enumerate(
+            zip(parameter_names, base_camera_blocks[cam_index])
+        ):
+            sigma = prior_sigmas.get(name)
+            if sigma is None or sigma <= 0:
+                continue
+            active_priors.append((cam_index, param_index, sigma, base_value))
 
     camera_lower, camera_upper = _expand_parameter_limits(
         parameter_names,
@@ -1524,30 +1592,30 @@ def multi_camera_bundle_adjustment(
 
     def residual_vector(params: np.ndarray) -> np.ndarray:
         trial_cals, points = unpack_parameters(params)
-        residuals = []
-        for pt in range(num_points):
-            for cam in range(num_cams):
-                obs = observed_pixels[pt, cam]
-                if not np.all(np.isfinite(obs)):
-                    continue
-                x_metric, y_metric = img_coord(points[pt], trial_cals[cam], cpar.mm)
-                proj_x, proj_y = metric_to_pixel(x_metric, y_metric, cpar)
-                residuals.append((proj_x - obs[0]) / cpar.pix_x)
-                residuals.append((proj_y - obs[1]) / cpar.pix_y)
+        residuals = np.empty(int(np.count_nonzero(obs_mask) * 2) + len(active_priors))
+        row = 0
 
-        if prior_sigmas:
-            offset = 0
-            for cam_index, cam in enumerate(optimized_cam_indices):
-                block = params[offset : offset + camera_block_size]
-                base_block = base_camera_blocks[cam_index]
-                for name, value, base_value in zip(parameter_names, block, base_block):
-                    sigma = prior_sigmas.get(name)
-                    if sigma is None or sigma <= 0:
-                        continue
-                    residuals.append((value - base_value) / sigma)
-                offset += camera_block_size
+        for cam, point_indices in enumerate(observation_point_indices):
+            if point_indices.size == 0:
+                continue
 
-        return np.asarray(residuals, dtype=np.float64)
+            projected_pixels = arr_metric_to_pixel(
+                image_coordinates(points[point_indices], trial_cals[cam], cpar.mm),
+                cpar,
+            )
+            observed = observed_pixels[point_indices, cam, :]
+            diffs = projected_pixels - observed
+            residual_count = point_indices.size * 2
+            residuals[row : row + residual_count : 2] = diffs[:, 0] / cpar.pix_x
+            residuals[row + 1 : row + residual_count : 2] = diffs[:, 1] / cpar.pix_y
+            row += residual_count
+
+        for cam_index, param_index, sigma, base_value in active_priors:
+            value = params[cam_index * camera_block_size + param_index]
+            residuals[row] = (value - base_value) / sigma
+            row += 1
+
+        return residuals
 
     initial_cals, initial_points = unpack_parameters(x0)
     initial_rms = reprojection_rms(observed_pixels, initial_points, initial_cals, cpar)
@@ -1562,6 +1630,16 @@ def multi_camera_bundle_adjustment(
         "max_nfev": max_nfev,
         "bounds": bounds,
     }
+    if method != "lm" and x0.size > 0:
+        least_squares_kwargs["jac_sparsity"] = _bundle_adjustment_jacobian_sparsity(
+            obs_mask,
+            num_cams,
+            optimized_cam_indices,
+            camera_block_size,
+            point_offset,
+            optimize_points,
+            active_priors,
+        )
     if ftol is not None:
         least_squares_kwargs["ftol"] = ftol
     if xtol is not None:

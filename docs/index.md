@@ -7,7 +7,7 @@ Python version of the OpenPTV library.
 :maxdepth: 2
 
 README.md
-API Reference <_api/openptv_python/index>
+bundle_adjustment.md
 ```
 
 # Indices and tables
