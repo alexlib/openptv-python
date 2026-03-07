@@ -3,6 +3,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
+import scipy.optimize
 
 from openptv_python.calibration import Calibration, read_calibration
 from openptv_python.imgcoord import image_coordinates
@@ -143,6 +144,63 @@ class TestBundleAdjustment(unittest.TestCase):
         after_rms = result["final_reprojection_rms"]
         self.assertLess(after_rms, before_rms * 0.4)
         self.assertLess(after_rms, 3e-2)
+
+    def test_multi_camera_bundle_adjustment_passes_x_scale_to_least_squares(self):
+        points = np.array(
+            [
+                [-10.0, -10.0, 0.0],
+                [10.0, -10.0, 1.0],
+                [-10.0, 10.0, -1.0],
+                [10.0, 10.0, 0.5],
+            ],
+            dtype=float,
+        )
+        observed_pixels = np.empty((len(points), 4, 2), dtype=float)
+        for cam_num, cal in enumerate(self.true_cals):
+            observed_pixels[:, cam_num, :] = arr_metric_to_pixel(
+                image_coordinates(points, cal, self.control.mm), self.control
+            )
+
+        start_cals = self.lightly_perturb_calibrations(self.true_cals)
+
+        def fake_least_squares(_fun, x0, **kwargs):
+            self.assertIn("x_scale", kwargs)
+            np.testing.assert_allclose(
+                kwargs["x_scale"],
+                np.array([0.02, 0.02, 0.02, 2e-4, 2e-4, 2e-4]),
+            )
+            return scipy.optimize.OptimizeResult(
+                x=x0,
+                success=True,
+                message="ok",
+            )
+
+        with patch(
+            "openptv_python.orientation.scipy.optimize.least_squares",
+            side_effect=fake_least_squares,
+        ):
+            _, refined_points, result = multi_camera_bundle_adjustment(
+                observed_pixels,
+                start_cals,
+                self.control,
+                OrientPar(),
+                point_init=points.copy(),
+                fixed_camera_indices=[0, 1, 2],
+                optimize_points=False,
+                loss="linear",
+                method="trf",
+                x_scale={
+                    "x0": 0.02,
+                    "y0": 0.02,
+                    "z0": 0.02,
+                    "omega": 2e-4,
+                    "phi": 2e-4,
+                    "kappa": 2e-4,
+                },
+            )
+
+        self.assertTrue(result.success)
+        np.testing.assert_allclose(refined_points, points)
 
     def test_cavity_reprojection_improves(self):
         cavity_dir = Path("tests/testing_fodder/test_cavity")
@@ -734,6 +792,123 @@ class TestBundleAdjustment(unittest.TestCase):
             [0, 1, 2, 3],
         )
         self.assertEqual(final_points.shape, points.shape)
+
+    def test_guarded_two_step_bundle_adjustment_supports_pose_micro_stages(self):
+        points = np.array(
+            [
+                [-10.0, -10.0, 0.0],
+                [10.0, -10.0, 1.0],
+                [-10.0, 10.0, -1.0],
+                [10.0, 10.0, 0.5],
+            ],
+            dtype=float,
+        )
+        observed_pixels = np.empty((len(points), 4, 2), dtype=float)
+        for cam_num, cal in enumerate(self.true_cals):
+            observed_pixels[:, cam_num, :] = arr_metric_to_pixel(
+                image_coordinates(points, cal, self.control.mm), self.control
+            )
+
+        start_cals = self.lightly_perturb_calibrations(self.true_cals)
+        intrinsics = OrientPar()
+        intrinsics.k1flag = 1
+        intrinsics.p1flag = 1
+        intrinsics.p2flag = 1
+
+        staged_returns = [
+            (self.true_cals, points.copy(), {"success": True, "stage": f"pose_{idx}"})
+            for idx in range(4)
+        ] + [(self.true_cals, points.copy(), {"success": True, "stage": "intrinsics"})]
+
+        with (
+            patch(
+                "openptv_python.orientation.multi_camera_bundle_adjustment",
+                side_effect=staged_returns,
+            ) as mocked_adjustment,
+            patch(
+                "openptv_python.orientation.reprojection_rms",
+                side_effect=[10.0, 9.5, 9.0, 8.5, 8.0, 7.5],
+            ),
+            patch(
+                "openptv_python.orientation.mean_ray_convergence",
+                side_effect=[6.0, 5.5, 5.0, 4.5, 4.0, 3.5],
+            ),
+        ):
+            _, _, summary = guarded_two_step_bundle_adjustment(
+                observed_pixels,
+                start_cals,
+                self.control,
+                OrientPar(),
+                intrinsics,
+                point_init=points,
+                pose_release_camera_order=[0, 1],
+                pose_stage_configs=[
+                    {
+                        "optimize_points": False,
+                        "max_nfev": 3,
+                        "x_scale": {
+                            "x0": 0.02,
+                            "y0": 0.02,
+                            "z0": 0.02,
+                            "omega": 2e-4,
+                            "phi": 2e-4,
+                            "kappa": 2e-4,
+                        },
+                    },
+                    {
+                        "optimize_points": True,
+                        "max_nfev": 4,
+                        "x_scale": {
+                            "x0": 0.05,
+                            "y0": 0.05,
+                            "z0": 0.05,
+                            "omega": 5e-4,
+                            "phi": 5e-4,
+                            "kappa": 5e-4,
+                            "points": 0.1,
+                        },
+                    },
+                ],
+                intrinsic_max_nfev=5,
+            )
+
+        self.assertEqual(mocked_adjustment.call_count, 5)
+        fixed_sequences = [
+            call.kwargs.get("fixed_camera_indices")
+            for call in mocked_adjustment.call_args_list
+        ]
+        self.assertEqual(
+            fixed_sequences,
+            [[1, 2, 3], [1, 2, 3], [2, 3], [2, 3], [0, 1, 2, 3]],
+        )
+        self.assertEqual(
+            [
+                call.kwargs.get("optimize_points")
+                for call in mocked_adjustment.call_args_list[:-1]
+            ],
+            [False, True, False, True],
+        )
+        self.assertEqual(
+            mocked_adjustment.call_args_list[0].kwargs.get("x_scale"),
+            {
+                "x0": 0.02,
+                "y0": 0.02,
+                "z0": 0.02,
+                "omega": 2e-4,
+                "phi": 2e-4,
+                "kappa": 2e-4,
+            },
+        )
+        self.assertEqual(summary["accepted_pose_stage_count"], 4)
+        self.assertEqual(len(summary["pose_stage_summaries"]), 4)
+        self.assertEqual(
+            [stage["micro_stage_index"] for stage in summary["pose_stage_summaries"]],
+            [1, 2, 1, 2],
+        )
+        self.assertEqual(
+            [stage["optimize_points"] for stage in summary["pose_stage_summaries"]],
+            [False, True, False, True],
+        )
 
     def test_guarded_two_step_bundle_adjustment_stagewise_ray_slack_allows_near_miss(
         self,

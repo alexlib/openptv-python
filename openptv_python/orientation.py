@@ -1361,6 +1361,53 @@ def _expand_parameter_limits(
     return np.asarray(lower, dtype=np.float64), np.asarray(upper, dtype=np.float64)
 
 
+def _bundle_adjustment_x_scale(
+    x_scale: Optional[float | Sequence[float] | Dict[str, float]],
+    parameter_names: List[str],
+    optimized_cam_indices: List[int],
+    optimize_points: bool,
+    num_points: int,
+    total_parameters: int,
+) -> Optional[float | np.ndarray]:
+    """Normalize least_squares x_scale inputs to the packed BA parameter vector."""
+    if x_scale is None:
+        return None
+
+    if np.isscalar(x_scale):
+        value = float(cast(float, x_scale))
+        if value <= 0:
+            raise ValueError("x_scale must be strictly positive")
+        return value
+
+    if isinstance(x_scale, dict):
+        values: List[float] = []
+        for _cam in optimized_cam_indices:
+            for name in parameter_names:
+                value = float(x_scale.get(name, 1.0))
+                if value <= 0:
+                    raise ValueError("x_scale entries must be strictly positive")
+                values.append(value)
+
+        if optimize_points:
+            point_scale = float(x_scale.get("points", x_scale.get("point", 1.0)))
+            if point_scale <= 0:
+                raise ValueError("point x_scale must be strictly positive")
+            values.extend([point_scale] * (num_points * 3))
+
+        return np.asarray(values, dtype=np.float64)
+
+    values = np.asarray(x_scale, dtype=np.float64)
+    if values.ndim != 1:
+        raise ValueError("x_scale sequence must be one-dimensional")
+    if values.size != total_parameters:
+        raise ValueError(
+            f"x_scale sequence must have length {total_parameters}, got {values.size}"
+        )
+    if np.any(values <= 0):
+        raise ValueError("x_scale entries must be strictly positive")
+    return values.copy()
+
+
 def _bundle_adjustment_jacobian_sparsity(
     obs_mask: np.ndarray,
     num_cams: int,
@@ -1478,6 +1525,7 @@ def multi_camera_bundle_adjustment(
     optimize_points: bool = True,
     known_points: Optional[Dict[int, np.ndarray]] = None,
     known_point_sigmas: Optional[float | np.ndarray] = None,
+    x_scale: Optional[float | Sequence[float] | Dict[str, float]] = None,
     ftol: Optional[float] = None,
     xtol: Optional[float] = None,
     gtol: Optional[float] = None,
@@ -1630,6 +1678,15 @@ def multi_camera_bundle_adjustment(
     else:
         bounds = (camera_lower, camera_upper)
 
+    normalized_x_scale = _bundle_adjustment_x_scale(
+        x_scale,
+        parameter_names,
+        optimized_cam_indices,
+        optimize_points,
+        num_points,
+        x0.size,
+    )
+
     def unpack_parameters(params: np.ndarray) -> Tuple[List[Calibration], np.ndarray]:
         trial_cals = [_clone_calibration(cal) for cal in base_cals]
         offset = 0
@@ -1701,6 +1758,8 @@ def multi_camera_bundle_adjustment(
         "max_nfev": max_nfev,
         "bounds": bounds,
     }
+    if normalized_x_scale is not None:
+        least_squares_kwargs["x_scale"] = normalized_x_scale
     if method != "lm" and x0.size > 0:
         least_squares_kwargs["jac_sparsity"] = _bundle_adjustment_jacobian_sparsity(
             obs_mask,
@@ -1758,11 +1817,14 @@ def guarded_two_step_bundle_adjustment(
     pose_loss: str = "linear",
     pose_method: str = "trf",
     pose_max_nfev: Optional[int] = None,
+    pose_x_scale: Optional[float | Sequence[float] | Dict[str, float]] = None,
+    pose_stage_configs: Optional[Sequence[Dict[str, object]]] = None,
     intrinsic_prior_sigmas: Optional[Dict[str, float]] = None,
     intrinsic_parameter_bounds: Optional[Dict[str, Tuple[float, float]]] = None,
     intrinsic_loss: str = "linear",
     intrinsic_method: str = "trf",
     intrinsic_max_nfev: Optional[int] = None,
+    intrinsic_x_scale: Optional[float | Sequence[float] | Dict[str, float]] = None,
     intrinsic_ftol: Optional[float] = 1e-12,
     intrinsic_xtol: Optional[float] = 1e-12,
     intrinsic_gtol: Optional[float] = 1e-12,
@@ -1786,6 +1848,53 @@ def guarded_two_step_bundle_adjustment(
     """Run pose-only BA then tightly constrained intrinsics BA with acceptance checks."""
     if pose_stage_ray_slack < 0:
         raise ValueError("pose_stage_ray_slack must be non-negative")
+
+    normalized_pose_stage_configs = list(pose_stage_configs or [])
+
+    def pose_stage_variants() -> List[Dict[str, object]]:
+        if not normalized_pose_stage_configs:
+            return [
+                {
+                    "prior_sigmas": pose_prior_sigmas,
+                    "parameter_bounds": pose_parameter_bounds,
+                    "max_nfev": pose_max_nfev,
+                    "optimize_points": pose_optimize_points,
+                    "x_scale": pose_x_scale,
+                    "loss": pose_loss,
+                    "method": pose_method,
+                }
+            ]
+
+        variants: List[Dict[str, object]] = []
+        for variant in normalized_pose_stage_configs:
+            variant_dict = dict(variant)
+            variants.append(
+                {
+                    "prior_sigmas": cast(
+                        Optional[Dict[str, float]],
+                        variant_dict.get("prior_sigmas", pose_prior_sigmas),
+                    ),
+                    "parameter_bounds": cast(
+                        Optional[Dict[str, Tuple[float, float]]],
+                        variant_dict.get("parameter_bounds", pose_parameter_bounds),
+                    ),
+                    "max_nfev": cast(
+                        Optional[int],
+                        variant_dict.get("max_nfev", pose_max_nfev),
+                    ),
+                    "optimize_points": cast(
+                        bool,
+                        variant_dict.get("optimize_points", pose_optimize_points),
+                    ),
+                    "x_scale": cast(
+                        Optional[float | Sequence[float] | Dict[str, float]],
+                        variant_dict.get("x_scale", pose_x_scale),
+                    ),
+                    "loss": cast(str, variant_dict.get("loss", pose_loss)),
+                    "method": cast(str, variant_dict.get("method", pose_method)),
+                }
+            )
+        return variants
 
     def projection_drift_summaries(
         reference_cals: List[Calibration],
@@ -1968,54 +2077,129 @@ def guarded_two_step_bundle_adjustment(
     )
 
     pose_stage_summaries: List[Dict[str, object]] = []
+    pose_stage_variants_list = pose_stage_variants()
     pose_result: object
     pose_ok: bool
     if pose_release_camera_order is None:
-        pose_cals, pose_points, pose_result = multi_camera_bundle_adjustment(
-            observed_pixels,
-            base_cals,
-            cpar,
-            pose_orient_par,
-            point_init=base_points,
-            fixed_camera_indices=fixed_camera_indices,
-            loss=pose_loss,
-            method=pose_method,
-            prior_sigmas=pose_prior_sigmas,
-            parameter_bounds=pose_parameter_bounds,
-            max_nfev=pose_max_nfev,
-            optimize_extrinsics=True,
-            optimize_points=pose_optimize_points,
-            known_points=known_points,
-            known_point_sigmas=known_point_sigmas,
-        )
-        pose_rms = reprojection_rms(observed_pixels, pose_points, pose_cals, cpar)
-        pose_ray_convergence = mean_ray_convergence(observed_pixels, pose_cals, cpar)
-        pose_geometry = projection_drift_summaries(
-            geometry_reference_cals,
-            pose_cals,
-            geometry_reference_points,
-        )
-        pose_geometry_max = max_projection_drift(pose_geometry)
-        pose_correspondence = correspondence_replacement_summary(
-            pose_points,
-            pose_cals,
-        )
-        pose_correspondence_rate = (
-            None
-            if pose_correspondence is None
-            else cast(float, pose_correspondence["replacement_rate"])
-        )
-        pose_ok = pose_rms <= baseline_rms and (
-            not reject_on_ray_convergence
-            or pose_ray_convergence <= baseline_ray_convergence
-        )
-        pose_geometry_ok = geometry_stage_ok(pose_geometry_max, baseline_geometry_max)
-        pose_ok = pose_ok and pose_geometry_ok
-        pose_correspondence_ok = correspondence_stage_ok(
-            pose_correspondence_rate,
-            baseline_correspondence_rate,
-        )
-        pose_ok = pose_ok and pose_correspondence_ok
+        stage_cals = [_clone_calibration(cal) for cal in base_cals]
+        stage_points = np.asarray(base_points, dtype=np.float64).copy()
+        stage_rms = baseline_rms
+        stage_ray_convergence = baseline_ray_convergence
+        stage_geometry = baseline_geometry
+        stage_geometry_max = baseline_geometry_max
+        stage_correspondence = baseline_correspondence
+        stage_correspondence_rate = baseline_correspondence_rate
+        pose_result = {"staged": bool(normalized_pose_stage_configs), "stages": []}
+        pose_ok = False
+        pose_geometry_ok = True
+        pose_correspondence_ok = True
+
+        for micro_stage_index, variant in enumerate(pose_stage_variants_list, start=1):
+            candidate_cals, candidate_points, candidate_result = multi_camera_bundle_adjustment(
+                observed_pixels,
+                stage_cals,
+                cpar,
+                pose_orient_par,
+                point_init=stage_points,
+                fixed_camera_indices=fixed_camera_indices,
+                loss=cast(str, variant["loss"]),
+                method=cast(str, variant["method"]),
+                prior_sigmas=cast(Optional[Dict[str, float]], variant["prior_sigmas"]),
+                parameter_bounds=cast(
+                    Optional[Dict[str, Tuple[float, float]]],
+                    variant["parameter_bounds"],
+                ),
+                max_nfev=cast(Optional[int], variant["max_nfev"]),
+                optimize_extrinsics=True,
+                optimize_points=cast(bool, variant["optimize_points"]),
+                known_points=known_points,
+                known_point_sigmas=known_point_sigmas,
+                x_scale=cast(
+                    Optional[float | Sequence[float] | Dict[str, float]],
+                    variant["x_scale"],
+                ),
+            )
+            candidate_rms = reprojection_rms(
+                observed_pixels, candidate_points, candidate_cals, cpar
+            )
+            candidate_ray_convergence = mean_ray_convergence(
+                observed_pixels, candidate_cals, cpar
+            )
+            candidate_geometry = projection_drift_summaries(
+                geometry_reference_cals,
+                candidate_cals,
+                geometry_reference_points,
+            )
+            candidate_geometry_max = max_projection_drift(candidate_geometry)
+            candidate_correspondence = correspondence_replacement_summary(
+                candidate_points,
+                candidate_cals,
+            )
+            candidate_correspondence_rate = (
+                None
+                if candidate_correspondence is None
+                else cast(float, candidate_correspondence["replacement_rate"])
+            )
+            pose_geometry_ok = geometry_stage_ok(
+                candidate_geometry_max,
+                stage_geometry_max,
+            )
+            pose_correspondence_ok = correspondence_stage_ok(
+                candidate_correspondence_rate,
+                stage_correspondence_rate,
+            )
+            pose_ok = candidate_rms <= stage_rms and (
+                not reject_on_ray_convergence
+                or candidate_ray_convergence <= stage_ray_convergence + pose_stage_ray_slack
+            )
+            pose_ok = pose_ok and pose_geometry_ok and pose_correspondence_ok
+            pose_stage_summaries.append(
+                {
+                    "stage_index": 1,
+                    "micro_stage_index": micro_stage_index,
+                    "released_camera_index": None,
+                    "free_camera_indices": [
+                        camera_index
+                        for camera_index in range(len(cals))
+                        if camera_index not in (fixed_camera_indices or [])
+                    ],
+                    "fixed_camera_indices": fixed_camera_indices,
+                    "reprojection_rms": candidate_rms,
+                    "mean_ray_convergence": candidate_ray_convergence,
+                    "geometry": candidate_geometry,
+                    "geometry_max": candidate_geometry_max,
+                    "geometry_ok": pose_geometry_ok,
+                    "correspondence": candidate_correspondence,
+                    "correspondence_rate": candidate_correspondence_rate,
+                    "correspondence_ok": pose_correspondence_ok,
+                    "accepted": pose_ok or not reject_worse_solution,
+                    "optimize_points": cast(bool, variant["optimize_points"]),
+                    "x_scale": variant["x_scale"],
+                    "result": candidate_result,
+                }
+            )
+            cast(List[object], pose_result["stages"]).append(candidate_result)
+
+            if reject_worse_solution and not pose_ok:
+                break
+
+            stage_cals = candidate_cals
+            stage_points = candidate_points
+            stage_rms = candidate_rms
+            stage_ray_convergence = candidate_ray_convergence
+            stage_geometry = candidate_geometry
+            stage_geometry_max = candidate_geometry_max
+            stage_correspondence = candidate_correspondence
+            stage_correspondence_rate = candidate_correspondence_rate
+
+        pose_cals = stage_cals
+        pose_points = stage_points
+        pose_rms = stage_rms
+        pose_ray_convergence = stage_ray_convergence
+        pose_geometry = stage_geometry
+        pose_geometry_max = stage_geometry_max
+        pose_correspondence = stage_correspondence
+        pose_correspondence_rate = stage_correspondence_rate
     else:
         release_order = [
             int(camera_index) for camera_index in pose_release_camera_order
@@ -2053,92 +2237,113 @@ def guarded_two_step_bundle_adjustment(
                 for camera_index in range(len(cals))
                 if camera_index not in released_cameras
             ]
-            stage_cals, stage_points, stage_result = multi_camera_bundle_adjustment(
-                observed_pixels,
-                current_cals,
-                cpar,
-                pose_orient_par,
-                point_init=current_points,
-                fixed_camera_indices=stage_fixed,
-                loss=pose_loss,
-                method=pose_method,
-                prior_sigmas=pose_prior_sigmas,
-                parameter_bounds=pose_parameter_bounds,
-                max_nfev=pose_max_nfev,
-                optimize_extrinsics=True,
-                optimize_points=pose_optimize_points,
-                known_points=known_points,
-                known_point_sigmas=known_point_sigmas,
-            )
-            stage_rms = reprojection_rms(
-                observed_pixels, stage_points, stage_cals, cpar
-            )
-            stage_ray_convergence = mean_ray_convergence(
-                observed_pixels, stage_cals, cpar
-            )
-            stage_geometry = projection_drift_summaries(
-                geometry_reference_cals,
-                stage_cals,
-                geometry_reference_points,
-            )
-            stage_geometry_max = max_projection_drift(stage_geometry)
-            stage_correspondence = correspondence_replacement_summary(
-                stage_points,
-                stage_cals,
-            )
-            stage_correspondence_rate = (
-                None
-                if stage_correspondence is None
-                else cast(float, stage_correspondence["replacement_rate"])
-            )
-            stage_geometry_ok = geometry_stage_ok(
-                stage_geometry_max,
-                current_geometry_max,
-            )
-            stage_correspondence_ok = correspondence_stage_ok(
-                stage_correspondence_rate,
-                current_correspondence_rate,
-            )
-            stage_ok = stage_rms <= current_rms and (
-                not reject_on_ray_convergence
-                or stage_ray_convergence
-                <= current_ray_convergence + pose_stage_ray_slack
-            )
-            stage_ok = stage_ok and stage_geometry_ok and stage_correspondence_ok
-            pose_stage_summaries.append(
-                {
-                    "stage_index": stage_index,
-                    "released_camera_index": released_camera,
-                    "free_camera_indices": released_cameras.copy(),
-                    "fixed_camera_indices": stage_fixed,
-                    "reprojection_rms": stage_rms,
-                    "mean_ray_convergence": stage_ray_convergence,
-                    "geometry": stage_geometry,
-                    "geometry_max": stage_geometry_max,
-                    "geometry_ok": stage_geometry_ok,
-                    "correspondence": stage_correspondence,
-                    "correspondence_rate": stage_correspondence_rate,
-                    "correspondence_ok": stage_correspondence_ok,
-                    "accepted": stage_ok or not reject_worse_solution,
-                    "result": stage_result,
-                }
-            )
-            cast(List[object], pose_result["stages"]).append(stage_result)
+            stage_ok = False
+            for micro_stage_index, variant in enumerate(
+                pose_stage_variants_list,
+                start=1,
+            ):
+                stage_cals, stage_points, stage_result = multi_camera_bundle_adjustment(
+                    observed_pixels,
+                    current_cals,
+                    cpar,
+                    pose_orient_par,
+                    point_init=current_points,
+                    fixed_camera_indices=stage_fixed,
+                    loss=cast(str, variant["loss"]),
+                    method=cast(str, variant["method"]),
+                    prior_sigmas=cast(
+                        Optional[Dict[str, float]],
+                        variant["prior_sigmas"],
+                    ),
+                    parameter_bounds=cast(
+                        Optional[Dict[str, Tuple[float, float]]],
+                        variant["parameter_bounds"],
+                    ),
+                    max_nfev=cast(Optional[int], variant["max_nfev"]),
+                    optimize_extrinsics=True,
+                    optimize_points=cast(bool, variant["optimize_points"]),
+                    known_points=known_points,
+                    known_point_sigmas=known_point_sigmas,
+                    x_scale=cast(
+                        Optional[float | Sequence[float] | Dict[str, float]],
+                        variant["x_scale"],
+                    ),
+                )
+                stage_rms = reprojection_rms(
+                    observed_pixels, stage_points, stage_cals, cpar
+                )
+                stage_ray_convergence = mean_ray_convergence(
+                    observed_pixels, stage_cals, cpar
+                )
+                stage_geometry = projection_drift_summaries(
+                    geometry_reference_cals,
+                    stage_cals,
+                    geometry_reference_points,
+                )
+                stage_geometry_max = max_projection_drift(stage_geometry)
+                stage_correspondence = correspondence_replacement_summary(
+                    stage_points,
+                    stage_cals,
+                )
+                stage_correspondence_rate = (
+                    None
+                    if stage_correspondence is None
+                    else cast(float, stage_correspondence["replacement_rate"])
+                )
+                stage_geometry_ok = geometry_stage_ok(
+                    stage_geometry_max,
+                    current_geometry_max,
+                )
+                stage_correspondence_ok = correspondence_stage_ok(
+                    stage_correspondence_rate,
+                    current_correspondence_rate,
+                )
+                stage_ok = stage_rms <= current_rms and (
+                    not reject_on_ray_convergence
+                    or stage_ray_convergence
+                    <= current_ray_convergence + pose_stage_ray_slack
+                )
+                stage_ok = stage_ok and stage_geometry_ok and stage_correspondence_ok
+                pose_stage_summaries.append(
+                    {
+                        "stage_index": stage_index,
+                        "micro_stage_index": micro_stage_index,
+                        "released_camera_index": released_camera,
+                        "free_camera_indices": released_cameras.copy(),
+                        "fixed_camera_indices": stage_fixed,
+                        "reprojection_rms": stage_rms,
+                        "mean_ray_convergence": stage_ray_convergence,
+                        "geometry": stage_geometry,
+                        "geometry_max": stage_geometry_max,
+                        "geometry_ok": stage_geometry_ok,
+                        "correspondence": stage_correspondence,
+                        "correspondence_rate": stage_correspondence_rate,
+                        "correspondence_ok": stage_correspondence_ok,
+                        "accepted": stage_ok or not reject_worse_solution,
+                        "optimize_points": cast(bool, variant["optimize_points"]),
+                        "x_scale": variant["x_scale"],
+                        "result": stage_result,
+                    }
+                )
+                cast(List[object], pose_result["stages"]).append(stage_result)
+
+                if reject_worse_solution and not stage_ok:
+                    break
+
+                current_cals = stage_cals
+                current_points = stage_points
+                current_rms = stage_rms
+                current_ray_convergence = stage_ray_convergence
+                current_geometry = stage_geometry
+                current_geometry_max = stage_geometry_max
+                current_correspondence = stage_correspondence
+                current_correspondence_rate = stage_correspondence_rate
+                pose_ok = True
+                pose_geometry_ok = stage_geometry_ok
+                pose_correspondence_ok = stage_correspondence_ok
 
             if reject_worse_solution and not stage_ok:
                 break
-
-            current_cals = stage_cals
-            current_points = stage_points
-            current_rms = stage_rms
-            current_ray_convergence = stage_ray_convergence
-            current_geometry = stage_geometry
-            current_geometry_max = stage_geometry_max
-            current_correspondence = stage_correspondence
-            current_correspondence_rate = stage_correspondence_rate
-            pose_ok = True
-            pose_geometry_ok = stage_geometry_ok
-            pose_correspondence_ok = stage_correspondence_ok
 
         pose_cals = current_cals
         pose_points = current_points
@@ -2166,6 +2371,7 @@ def guarded_two_step_bundle_adjustment(
         optimize_points=intrinsic_optimize_points,
         known_points=known_points,
         known_point_sigmas=known_point_sigmas,
+        x_scale=intrinsic_x_scale,
         ftol=intrinsic_ftol,
         xtol=intrinsic_xtol,
         gtol=intrinsic_gtol,
@@ -2244,6 +2450,7 @@ def guarded_two_step_bundle_adjustment(
         "pose_geometry_ok": pose_geometry_ok,
         "pose_release_camera_order": pose_release_camera_order,
         "pose_stage_ray_slack": pose_stage_ray_slack,
+        "pose_stage_configs": normalized_pose_stage_configs,
         "pose_stage_summaries": pose_stage_summaries,
         "accepted_pose_stage_count": len(
             [summary for summary in pose_stage_summaries if summary["accepted"]]

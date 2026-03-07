@@ -1,10 +1,12 @@
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 
 from openptv_python.calibration import read_calibration
 from openptv_python.demo_bundle_adjustment import (
+    ExperimentSpec,
     ExperimentResult,
     all_fixed_camera_pairs,
     build_experiment_start_calibrations,
@@ -16,12 +18,15 @@ from openptv_python.demo_bundle_adjustment import (
     load_reference_geometry_points,
     normalize_staged_release_order,
     perturb_calibrations,
+    run_experiment,
     summarize_epipolar_consistency,
     summarize_fixed_camera_diagnostics,
     summarize_quadruplet_sensitivity,
 )
+from openptv_python.imgcoord import image_coordinates
 from openptv_python.parameters import ControlPar, read_volume_par
 from openptv_python.tracking_frame_buf import read_path_frame, read_targets
+from openptv_python.trafo import arr_metric_to_pixel
 
 
 class TestBundleAdjustmentDemo(unittest.TestCase):
@@ -47,6 +52,7 @@ class TestBundleAdjustmentDemo(unittest.TestCase):
 
         names = [spec.name for spec in experiments]
         self.assertIn("intrinsics_only", names)
+        self.assertIn("intrinsics_first_guarded_stagewise_release", names)
         self.assertIn("pose_trf_known_points", names)
         self.assertIn("guarded_two_step_known_points", names)
         self.assertIn("guarded_stagewise_release", names)
@@ -71,6 +77,11 @@ class TestBundleAdjustmentDemo(unittest.TestCase):
         guarded_spec = next(
             spec for spec in experiments if spec.name == "guarded_two_step_known_points"
         )
+        intrinsics_first_spec = next(
+            spec
+            for spec in experiments
+            if spec.name == "intrinsics_first_guarded_stagewise_release"
+        )
         staged_spec = next(
             spec for spec in experiments if spec.name == "guarded_stagewise_release"
         )
@@ -88,13 +99,114 @@ class TestBundleAdjustmentDemo(unittest.TestCase):
             staged_spec.ba_kwargs["pose_release_camera_order"], [0, 1, 2, 3]
         )
         self.assertEqual(staged_spec.ba_kwargs["pose_stage_ray_slack"], 0.0)
+        self.assertEqual(len(staged_spec.ba_kwargs["pose_stage_configs"]), 3)
+        self.assertFalse(staged_spec.ba_kwargs["pose_stage_configs"][0]["optimize_points"])
+        self.assertTrue(staged_spec.ba_kwargs["pose_stage_configs"][1]["optimize_points"])
+        self.assertTrue(staged_spec.ba_kwargs["pose_stage_configs"][2]["optimize_points"])
+        self.assertEqual(intrinsics_first_spec.mode, "intrinsics_then_guarded")
+        self.assertFalse(intrinsics_first_spec.ba_kwargs["warmstart_optimize_extrinsics"])
+        self.assertFalse(intrinsics_first_spec.ba_kwargs["warmstart_optimize_points"])
+        self.assertEqual(
+            intrinsics_first_spec.ba_kwargs["pose_release_camera_order"],
+            [0, 1, 2, 3],
+        )
+        self.assertEqual(
+            len(intrinsics_first_spec.ba_kwargs["pose_stage_configs"]),
+            2,
+        )
+        self.assertFalse(
+            intrinsics_first_spec.ba_kwargs["pose_stage_configs"][0]["optimize_points"]
+        )
+        self.assertTrue(
+            intrinsics_first_spec.ba_kwargs["pose_stage_configs"][1]["optimize_points"]
+        )
         self.assertIs(staged_known_spec.ba_kwargs["known_points"], known_points)
         self.assertEqual(staged_known_spec.ba_kwargs["known_point_sigmas"], 0.25)
+        self.assertTrue(
+            all(
+                stage_config["optimize_points"]
+                for stage_config in guarded_spec.ba_kwargs["pose_stage_configs"]
+            )
+        )
+        self.assertTrue(
+            all(
+                stage_config["optimize_points"]
+                for stage_config in staged_known_spec.ba_kwargs["pose_stage_configs"]
+            )
+        )
         self.assertEqual(guarded_spec.ba_kwargs["geometry_guard_mode"], "off")
         self.assertIsNone(guarded_spec.ba_kwargs["geometry_guard_threshold"])
         self.assertEqual(guarded_spec.ba_kwargs["correspondence_guard_mode"], "off")
         self.assertIsNone(guarded_spec.ba_kwargs["correspondence_guard_threshold"])
         self.assertIsNone(guarded_spec.ba_kwargs["correspondence_guard_reference_rate"])
+
+    def test_run_experiment_intrinsics_then_guarded_executes_warmstart_first(self):
+        control = ControlPar(4).from_file(
+            Path("tests/testing_folder/control_parameters/control.par")
+        )
+        add_file = Path("tests/testing_folder/calibration/cam1.tif.addpar")
+        reference_cals = [
+            read_calibration(
+                Path(f"tests/testing_folder/calibration/sym_cam{cam_num}.tif.ori"),
+                add_file,
+            )
+            for cam_num in range(1, 5)
+        ]
+        start_cals = perturb_calibrations(reference_cals, 1.0)
+        points = np.array(
+            [
+                [-10.0, -10.0, 0.0],
+                [10.0, -10.0, 1.0],
+                [-10.0, 10.0, -1.0],
+                [10.0, 10.0, 0.5],
+            ],
+            dtype=float,
+        )
+        observed_pixels = np.empty((len(points), 4, 2), dtype=float)
+        for cam_num, cal in enumerate(reference_cals):
+            observed_pixels[:, cam_num, :] = arr_metric_to_pixel(
+                image_coordinates(points, cal, control.mm),
+                control,
+            )
+
+        spec = next(
+            experiment
+            for experiment in default_experiments(perturbation_scale=1.0)
+            if experiment.name == "intrinsics_first_guarded_stagewise_release"
+        )
+
+        with (
+            patch(
+                "openptv_python.demo_bundle_adjustment.multi_camera_bundle_adjustment",
+                return_value=(reference_cals, points.copy(), {"success": True, "final_reprojection_rms": 3.8, "message": "warm"}),
+            ) as warmstart,
+            patch(
+                "openptv_python.demo_bundle_adjustment.guarded_two_step_bundle_adjustment",
+                return_value=(reference_cals, points.copy(), {"accepted_stage": "intrinsics", "final_reprojection_rms": 3.7, "final_mean_ray_convergence": 0.2}),
+            ) as guarded,
+        ):
+            result = run_experiment(
+                spec,
+                observed_pixels=observed_pixels,
+                point_init=points,
+                control=control,
+                start_cals=start_cals,
+                reference_cals=reference_cals,
+                reference_geometry_points=None,
+                tracking_data=None,
+                geometry_export_threshold=None,
+                correspondence_export_threshold=None,
+                source_case_dir=Path("tests/testing_folder"),
+                output_dir=None,
+            )
+
+        self.assertEqual(warmstart.call_count, 1)
+        self.assertEqual(guarded.call_count, 1)
+        self.assertFalse(warmstart.call_args.kwargs["optimize_extrinsics"])
+        self.assertFalse(warmstart.call_args.kwargs["optimize_points"])
+        np.testing.assert_allclose(guarded.call_args.kwargs["point_init"], points)
+        self.assertIn("warmstart_rms=3.800000", result.notes)
+        self.assertIn("accepted_stage=intrinsics", result.notes)
 
     def test_default_experiments_accepts_geometry_guard_configuration(self):
         experiments = default_experiments(
