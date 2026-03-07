@@ -53,6 +53,7 @@ class TestBundleAdjustmentDemo(unittest.TestCase):
         names = [spec.name for spec in experiments]
         self.assertIn("intrinsics_only", names)
         self.assertIn("intrinsics_first_guarded_stagewise_release", names)
+        self.assertIn("intrinsics_first_alternating_stagewise_release", names)
         self.assertIn("pose_trf_known_points", names)
         self.assertIn("guarded_two_step_known_points", names)
         self.assertIn("guarded_stagewise_release", names)
@@ -81,6 +82,11 @@ class TestBundleAdjustmentDemo(unittest.TestCase):
             spec
             for spec in experiments
             if spec.name == "intrinsics_first_guarded_stagewise_release"
+        )
+        alternating_spec = next(
+            spec
+            for spec in experiments
+            if spec.name == "intrinsics_first_alternating_stagewise_release"
         )
         staged_spec = next(
             spec for spec in experiments if spec.name == "guarded_stagewise_release"
@@ -119,6 +125,17 @@ class TestBundleAdjustmentDemo(unittest.TestCase):
         )
         self.assertTrue(
             intrinsics_first_spec.ba_kwargs["pose_stage_configs"][1]["optimize_points"]
+        )
+        self.assertEqual(alternating_spec.mode, "alternating")
+        self.assertEqual(
+            len(alternating_spec.ba_kwargs["pose_block_configs"]),
+            2,
+        )
+        self.assertFalse(
+            alternating_spec.ba_kwargs["pose_block_configs"][0]["optimize_points"]
+        )
+        self.assertTrue(
+            alternating_spec.ba_kwargs["pose_block_configs"][1]["optimize_points"]
         )
         self.assertIs(staged_known_spec.ba_kwargs["known_points"], known_points)
         self.assertEqual(staged_known_spec.ba_kwargs["known_point_sigmas"], 0.25)
@@ -207,6 +224,73 @@ class TestBundleAdjustmentDemo(unittest.TestCase):
         np.testing.assert_allclose(guarded.call_args.kwargs["point_init"], points)
         self.assertIn("warmstart_rms=3.800000", result.notes)
         self.assertIn("accepted_stage=intrinsics", result.notes)
+
+    def test_run_experiment_alternating_mode_uses_alternating_solver(self):
+        control = ControlPar(4).from_file(
+            Path("tests/testing_folder/control_parameters/control.par")
+        )
+        add_file = Path("tests/testing_folder/calibration/cam1.tif.addpar")
+        reference_cals = [
+            read_calibration(
+                Path(f"tests/testing_folder/calibration/sym_cam{cam_num}.tif.ori"),
+                add_file,
+            )
+            for cam_num in range(1, 5)
+        ]
+        start_cals = perturb_calibrations(reference_cals, 1.0)
+        points = np.array(
+            [
+                [-10.0, -10.0, 0.0],
+                [10.0, -10.0, 1.0],
+                [-10.0, 10.0, -1.0],
+                [10.0, 10.0, 0.5],
+            ],
+            dtype=float,
+        )
+        observed_pixels = np.empty((len(points), 4, 2), dtype=float)
+        for cam_num, cal in enumerate(reference_cals):
+            observed_pixels[:, cam_num, :] = arr_metric_to_pixel(
+                image_coordinates(points, cal, control.mm),
+                control,
+            )
+
+        spec = next(
+            experiment
+            for experiment in default_experiments(perturbation_scale=1.0)
+            if experiment.name == "intrinsics_first_alternating_stagewise_release"
+        )
+
+        with patch(
+            "openptv_python.demo_bundle_adjustment.alternating_bundle_adjustment",
+            return_value=(
+                reference_cals,
+                points.copy(),
+                {
+                    "warmstart_ok": True,
+                    "accepted_stage": "warmstart",
+                    "final_reprojection_rms": 3.9,
+                    "final_mean_ray_convergence": 0.2,
+                },
+            ),
+        ) as alternating:
+            result = run_experiment(
+                spec,
+                observed_pixels=observed_pixels,
+                point_init=points,
+                control=control,
+                start_cals=start_cals,
+                reference_cals=reference_cals,
+                reference_geometry_points=None,
+                tracking_data=None,
+                geometry_export_threshold=None,
+                correspondence_export_threshold=None,
+                source_case_dir=Path("tests/testing_folder"),
+                output_dir=None,
+            )
+
+        self.assertEqual(alternating.call_count, 1)
+        self.assertIn("warmstart_ok=True", result.notes)
+        self.assertIn("accepted_stage=warmstart", result.notes)
 
     def test_default_experiments_accepts_geometry_guard_configuration(self):
         experiments = default_experiments(

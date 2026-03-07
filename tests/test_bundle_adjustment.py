@@ -8,6 +8,7 @@ import scipy.optimize
 from openptv_python.calibration import Calibration, read_calibration
 from openptv_python.imgcoord import image_coordinates
 from openptv_python.orientation import (
+    alternating_bundle_adjustment,
     guarded_two_step_bundle_adjustment,
     mean_ray_convergence,
     multi_camera_bundle_adjustment,
@@ -908,6 +909,95 @@ class TestBundleAdjustment(unittest.TestCase):
         self.assertEqual(
             [stage["optimize_points"] for stage in summary["pose_stage_summaries"]],
             [False, True, False, True],
+        )
+
+    def test_alternating_bundle_adjustment_supports_block_schedule(self):
+        points = np.array(
+            [
+                [-10.0, -10.0, 0.0],
+                [10.0, -10.0, 1.0],
+                [-10.0, 10.0, -1.0],
+                [10.0, 10.0, 0.5],
+            ],
+            dtype=float,
+        )
+        observed_pixels = np.empty((len(points), 4, 2), dtype=float)
+        for cam_num, cal in enumerate(self.true_cals):
+            observed_pixels[:, cam_num, :] = arr_metric_to_pixel(
+                image_coordinates(points, cal, self.control.mm), self.control
+            )
+
+        staged_returns = [
+            (self.true_cals, points.copy(), {"success": True, "final_reprojection_rms": 9.5}),
+            (self.true_cals, points.copy(), {"success": True, "final_reprojection_rms": 9.0}),
+            (self.true_cals, points.copy(), {"success": True, "final_reprojection_rms": 8.5}),
+            (self.true_cals, points.copy(), {"success": True, "final_reprojection_rms": 8.0}),
+            (self.true_cals, points.copy(), {"success": True, "final_reprojection_rms": 7.5}),
+            (self.true_cals, points.copy(), {"success": True, "final_reprojection_rms": 7.0}),
+        ]
+
+        with (
+            patch(
+                "openptv_python.orientation.multi_camera_bundle_adjustment",
+                side_effect=staged_returns,
+            ) as mocked_adjustment,
+            patch(
+                "openptv_python.orientation.reprojection_rms",
+                side_effect=[10.0, 9.5, 9.0, 8.5, 8.0, 7.5, 7.0],
+            ),
+            patch(
+                "openptv_python.orientation.mean_ray_convergence",
+                side_effect=[6.0, 5.5, 5.0, 4.5, 4.0, 3.5, 3.0],
+            ),
+        ):
+            _, _, summary = alternating_bundle_adjustment(
+                observed_pixels,
+                self.lightly_perturb_calibrations(self.true_cals),
+                self.control,
+                OrientPar(),
+                OrientPar(),
+                point_init=points,
+                pose_release_camera_order=[0, 1],
+                pose_block_configs=[
+                    {
+                        "name": "points_only",
+                        "optimize_extrinsics": False,
+                        "optimize_points": True,
+                        "max_nfev": 3,
+                    },
+                    {
+                        "name": "rotation_only",
+                        "optimize_extrinsics": True,
+                        "optimize_points": False,
+                        "freeze_translation": True,
+                        "max_nfev": 3,
+                    },
+                ],
+                intrinsic_max_nfev=4,
+            )
+
+        self.assertEqual(mocked_adjustment.call_count, 6)
+        fixed_sequences = [
+            call.kwargs.get("fixed_camera_indices")
+            for call in mocked_adjustment.call_args_list
+        ]
+        self.assertEqual(
+            fixed_sequences,
+            [[0, 1, 2, 3], [1, 2, 3], [1, 2, 3], [2, 3], [2, 3], [0, 1, 2, 3]],
+        )
+        self.assertFalse(mocked_adjustment.call_args_list[0].kwargs["optimize_extrinsics"])
+        self.assertFalse(mocked_adjustment.call_args_list[0].kwargs["optimize_points"])
+        self.assertFalse(mocked_adjustment.call_args_list[1].kwargs["optimize_extrinsics"])
+        self.assertTrue(mocked_adjustment.call_args_list[1].kwargs["optimize_points"])
+        self.assertEqual(
+            mocked_adjustment.call_args_list[2].kwargs["parameter_bounds"]["x0"],
+            (0.0, 0.0),
+        )
+        self.assertEqual(summary["accepted_stage"], "intrinsics")
+        self.assertEqual(summary["accepted_pose_block_count"], 4)
+        self.assertEqual(
+            [block["block_name"] for block in summary["pose_block_summaries"]],
+            ["points_only", "rotation_only", "points_only", "rotation_only"],
         )
 
     def test_guarded_two_step_bundle_adjustment_stagewise_ray_slack_allows_near_miss(

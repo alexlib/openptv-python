@@ -1568,7 +1568,12 @@ def multi_camera_bundle_adjustment(
     else:
         optimized_cam_indices = list(range(num_cams))
 
-    if not optimize_extrinsics and not optional_names and not include_interface:
+    if (
+        not optimize_extrinsics
+        and not optional_names
+        and not include_interface
+        and not optimize_points
+    ):
         raise ValueError("No camera parameters are enabled for optimization")
 
     if not optimize_points and not optimized_cam_indices:
@@ -2477,6 +2482,674 @@ def guarded_two_step_bundle_adjustment(
         "final_reprojection_rms": final_rms,
         "final_mean_ray_convergence": final_ray_convergence,
         "pose_result": pose_result,
+        "intrinsic_result": intrinsic_result,
+    }
+
+    return final_cals, final_points, summary
+
+
+def alternating_bundle_adjustment(
+    observed_pixels: np.ndarray,
+    cals: List[Calibration],
+    cpar: ControlPar,
+    pose_orient_par: OrientPar,
+    intrinsic_orient_par: OrientPar,
+    *,
+    point_init: Optional[np.ndarray] = None,
+    fixed_camera_indices: Optional[List[int]] = None,
+    pose_release_camera_order: Optional[List[int]] = None,
+    pose_stage_ray_slack: float = 0.0,
+    pose_prior_sigmas: Optional[Dict[str, float]] = None,
+    pose_parameter_bounds: Optional[Dict[str, Tuple[float, float]]] = None,
+    pose_loss: str = "linear",
+    pose_method: str = "trf",
+    pose_max_nfev: Optional[int] = None,
+    pose_x_scale: Optional[float | Sequence[float] | Dict[str, float]] = None,
+    pose_block_configs: Optional[Sequence[Dict[str, object]]] = None,
+    intrinsic_prior_sigmas: Optional[Dict[str, float]] = None,
+    intrinsic_parameter_bounds: Optional[Dict[str, Tuple[float, float]]] = None,
+    intrinsic_loss: str = "linear",
+    intrinsic_method: str = "trf",
+    intrinsic_max_nfev: Optional[int] = None,
+    intrinsic_x_scale: Optional[float | Sequence[float] | Dict[str, float]] = None,
+    intrinsic_ftol: Optional[float] = 1e-12,
+    intrinsic_xtol: Optional[float] = 1e-12,
+    intrinsic_gtol: Optional[float] = 1e-12,
+    known_points: Optional[Dict[int, np.ndarray]] = None,
+    known_point_sigmas: Optional[float | np.ndarray] = None,
+    geometry_reference_points: Optional[np.ndarray] = None,
+    geometry_reference_cals: Optional[List[Calibration]] = None,
+    geometry_guard_mode: str = "off",
+    geometry_guard_threshold: Optional[float] = None,
+    correspondence_original_ids: Optional[np.ndarray] = None,
+    correspondence_point_frame_indices: Optional[np.ndarray] = None,
+    correspondence_frame_target_pixels: Optional[Sequence[Sequence[np.ndarray]]] = None,
+    correspondence_guard_mode: str = "off",
+    correspondence_guard_threshold: Optional[float] = None,
+    correspondence_guard_reference_rate: Optional[float] = None,
+    reject_worse_solution: bool = True,
+    reject_on_ray_convergence: bool = True,
+) -> Tuple[List[Calibration], np.ndarray, Dict[str, object]]:
+    """Run intrinsics-first alternating BA with point/rotation/translation block updates."""
+    if pose_stage_ray_slack < 0:
+        raise ValueError("pose_stage_ray_slack must be non-negative")
+
+    def merge_bounds(
+        base: Optional[Dict[str, Tuple[float, float]]],
+        updates: Optional[Dict[str, Tuple[float, float]]],
+    ) -> Optional[Dict[str, Tuple[float, float]]]:
+        merged = dict(base or {})
+        if updates is not None:
+            merged.update(updates)
+        return merged or None
+
+    def default_pose_blocks() -> List[Dict[str, object]]:
+        return [
+            {
+                "name": "points_only",
+                "optimize_extrinsics": False,
+                "optimize_points": True,
+                "loss": pose_loss,
+                "method": pose_method,
+                "max_nfev": 4 if pose_max_nfev is None else min(4, pose_max_nfev),
+                "x_scale": {"points": 0.1},
+            },
+            {
+                "name": "rotation_only",
+                "optimize_extrinsics": True,
+                "optimize_points": False,
+                "freeze_translation": True,
+                "loss": pose_loss,
+                "method": pose_method,
+                "max_nfev": 4 if pose_max_nfev is None else min(4, pose_max_nfev),
+                "x_scale": {
+                    "omega": 2e-4,
+                    "phi": 2e-4,
+                    "kappa": 2e-4,
+                },
+            },
+            {
+                "name": "translation_only",
+                "optimize_extrinsics": True,
+                "optimize_points": False,
+                "freeze_rotation": True,
+                "loss": pose_loss,
+                "method": pose_method,
+                "max_nfev": 4 if pose_max_nfev is None else min(4, pose_max_nfev),
+                "x_scale": {
+                    "x0": 0.02,
+                    "y0": 0.02,
+                    "z0": 0.02,
+                },
+            },
+            {
+                "name": "joint_pose_points",
+                "optimize_extrinsics": True,
+                "optimize_points": True,
+                "loss": pose_loss,
+                "method": pose_method,
+                "max_nfev": pose_max_nfev,
+                "x_scale": pose_x_scale,
+            },
+        ]
+
+    normalized_pose_block_configs = list(
+        default_pose_blocks() if pose_block_configs is None else pose_block_configs
+    )
+
+    def projection_drift_summaries(
+        reference_cals: List[Calibration],
+        candidate_cals: List[Calibration],
+        reference_points: Optional[np.ndarray],
+    ) -> Optional[List[Dict[str, float]]]:
+        if reference_points is None:
+            return None
+
+        summaries: List[Dict[str, float]] = []
+        for camera_index, (reference_cal, candidate_cal) in enumerate(
+            zip(reference_cals, candidate_cals),
+            start=1,
+        ):
+            reference_pixels = []
+            candidate_pixels = []
+            for point in reference_points:
+                ref_x, ref_y = img_coord(point, reference_cal, cpar.mm)
+                cand_x, cand_y = img_coord(point, candidate_cal, cpar.mm)
+                reference_pixels.append(metric_to_pixel(ref_x, ref_y, cpar))
+                candidate_pixels.append(metric_to_pixel(cand_x, cand_y, cpar))
+
+            displacement = np.linalg.norm(
+                np.asarray(candidate_pixels) - np.asarray(reference_pixels),
+                axis=1,
+            )
+            summaries.append(
+                {
+                    "camera_index": float(camera_index),
+                    "mean_distance": float(displacement.mean()),
+                    "p95_distance": float(np.percentile(displacement, 95.0)),
+                    "max_distance": float(displacement.max()),
+                }
+            )
+
+        return summaries
+
+    def max_projection_drift(
+        summaries: Optional[List[Dict[str, float]]],
+    ) -> Optional[float]:
+        if not summaries:
+            return None
+        return max(item["max_distance"] for item in summaries)
+
+    def geometry_stage_ok(
+        candidate_metric: Optional[float],
+        baseline_metric: Optional[float],
+    ) -> bool:
+        if geometry_guard_mode == "off" or candidate_metric is None:
+            return True
+        if geometry_guard_mode == "soft":
+            if baseline_metric is None:
+                return True
+            return candidate_metric <= baseline_metric + 1e-12
+        if geometry_guard_mode == "hard":
+            if geometry_guard_threshold is None or geometry_guard_threshold <= 0:
+                raise ValueError(
+                    "geometry_guard_threshold must be positive when geometry_guard_mode='hard'"
+                )
+            return candidate_metric <= geometry_guard_threshold
+        raise ValueError("geometry_guard_mode must be one of 'off', 'soft', or 'hard'")
+
+    def correspondence_replacement_summary(
+        candidate_points: np.ndarray,
+        candidate_cals: List[Calibration],
+    ) -> Optional[Dict[str, object]]:
+        if (
+            correspondence_original_ids is None
+            or correspondence_point_frame_indices is None
+            or correspondence_frame_target_pixels is None
+        ):
+            return None
+
+        projected_pixels = np.empty(
+            (candidate_points.shape[0], len(candidate_cals), 2),
+            dtype=np.float64,
+        )
+        for camera_index, cal in enumerate(candidate_cals):
+            projected_pixels[:, camera_index, :] = arr_metric_to_pixel(
+                image_coordinates(candidate_points, cal, cpar.mm),
+                cpar,
+            )
+
+        replacement_ids = np.empty_like(correspondence_original_ids)
+        nearest_distances = np.empty_like(
+            correspondence_original_ids,
+            dtype=np.float64,
+        )
+        for point_index in range(candidate_points.shape[0]):
+            frame_targets = correspondence_frame_target_pixels[
+                int(correspondence_point_frame_indices[point_index])
+            ]
+            for camera_index in range(len(candidate_cals)):
+                deltas = (
+                    frame_targets[camera_index]
+                    - projected_pixels[point_index, camera_index]
+                )
+                squared_distances = np.sum(deltas * deltas, axis=1)
+                nearest_index = int(np.argmin(squared_distances))
+                replacement_ids[point_index, camera_index] = nearest_index
+                nearest_distances[point_index, camera_index] = float(
+                    np.sqrt(squared_distances[nearest_index])
+                )
+
+        changed_mask = np.any(
+            replacement_ids != correspondence_original_ids,
+            axis=1,
+        )
+        camera_change_rates = [
+            float(
+                np.mean(
+                    replacement_ids[:, camera_index]
+                    != correspondence_original_ids[:, camera_index]
+                )
+            )
+            for camera_index in range(len(candidate_cals))
+        ]
+        return {
+            "replacement_rate": float(np.mean(changed_mask)),
+            "camera_change_rates": camera_change_rates,
+            "mean_nearest_distance": float(np.mean(nearest_distances)),
+            "p95_nearest_distance": float(np.percentile(nearest_distances, 95.0)),
+            "max_nearest_distance": float(np.max(nearest_distances)),
+        }
+
+    def correspondence_stage_ok(
+        candidate_rate: Optional[float],
+        prior_rate: Optional[float],
+    ) -> bool:
+        if correspondence_guard_mode == "off" or candidate_rate is None:
+            return True
+        if correspondence_guard_mode == "soft":
+            if correspondence_guard_reference_rate is not None:
+                return candidate_rate <= correspondence_guard_reference_rate + 1e-12
+            if prior_rate is None:
+                return True
+            return candidate_rate <= prior_rate + 1e-12
+        if correspondence_guard_mode == "hard":
+            if (
+                correspondence_guard_threshold is None
+                or correspondence_guard_threshold <= 0
+            ):
+                raise ValueError(
+                    "correspondence_guard_threshold must be positive when correspondence_guard_mode='hard'"
+                )
+            return candidate_rate <= correspondence_guard_threshold
+        raise ValueError(
+            "correspondence_guard_mode must be one of 'off', 'soft', or 'hard'"
+        )
+
+    base_cals = [_clone_calibration(cal) for cal in cals]
+    if point_init is None:
+        base_points, _ = initialize_bundle_adjustment_points(
+            observed_pixels, base_cals, cpar
+        )
+    else:
+        base_points = np.asarray(point_init, dtype=np.float64)
+        if base_points.shape != (observed_pixels.shape[0], 3):
+            raise ValueError("point_init must have shape (num_points, 3)")
+
+    baseline_rms = reprojection_rms(observed_pixels, base_points, base_cals, cpar)
+    baseline_ray_convergence = mean_ray_convergence(observed_pixels, base_cals, cpar)
+    if geometry_reference_cals is None:
+        geometry_reference_cals = [_clone_calibration(cal) for cal in base_cals]
+
+    baseline_geometry = projection_drift_summaries(
+        geometry_reference_cals,
+        base_cals,
+        geometry_reference_points,
+    )
+    baseline_geometry_max = max_projection_drift(baseline_geometry)
+    baseline_correspondence = correspondence_replacement_summary(
+        base_points,
+        base_cals,
+    )
+    baseline_correspondence_rate = (
+        None
+        if baseline_correspondence is None
+        else cast(float, baseline_correspondence["replacement_rate"])
+    )
+
+    warmstart_fixed = list(range(len(cals)))
+    warmstart_cals, warmstart_points, warmstart_result = multi_camera_bundle_adjustment(
+        observed_pixels,
+        base_cals,
+        cpar,
+        intrinsic_orient_par,
+        point_init=base_points,
+        fixed_camera_indices=warmstart_fixed,
+        loss=intrinsic_loss,
+        method=intrinsic_method,
+        prior_sigmas=intrinsic_prior_sigmas,
+        parameter_bounds=intrinsic_parameter_bounds,
+        max_nfev=intrinsic_max_nfev,
+        optimize_extrinsics=False,
+        optimize_points=False,
+        x_scale=intrinsic_x_scale,
+        ftol=intrinsic_ftol,
+        xtol=intrinsic_xtol,
+        gtol=intrinsic_gtol,
+    )
+    warmstart_rms = reprojection_rms(observed_pixels, warmstart_points, warmstart_cals, cpar)
+    warmstart_ray_convergence = mean_ray_convergence(observed_pixels, warmstart_cals, cpar)
+    warmstart_geometry = projection_drift_summaries(
+        geometry_reference_cals,
+        warmstart_cals,
+        geometry_reference_points,
+    )
+    warmstart_geometry_max = max_projection_drift(warmstart_geometry)
+    warmstart_correspondence = correspondence_replacement_summary(
+        warmstart_points,
+        warmstart_cals,
+    )
+    warmstart_correspondence_rate = (
+        None
+        if warmstart_correspondence is None
+        else cast(float, warmstart_correspondence["replacement_rate"])
+    )
+    warmstart_ok = warmstart_rms <= baseline_rms and (
+        not reject_on_ray_convergence
+        or warmstart_ray_convergence <= baseline_ray_convergence
+    )
+    warmstart_ok = warmstart_ok and geometry_stage_ok(
+        warmstart_geometry_max,
+        baseline_geometry_max,
+    )
+    warmstart_ok = warmstart_ok and correspondence_stage_ok(
+        warmstart_correspondence_rate,
+        baseline_correspondence_rate,
+    )
+
+    if reject_worse_solution and not warmstart_ok:
+        current_cals = [_clone_calibration(cal) for cal in base_cals]
+        current_points = np.asarray(base_points, dtype=np.float64).copy()
+        current_rms = baseline_rms
+        current_ray_convergence = baseline_ray_convergence
+        current_geometry = baseline_geometry
+        current_geometry_max = baseline_geometry_max
+        current_correspondence = baseline_correspondence
+        current_correspondence_rate = baseline_correspondence_rate
+    else:
+        current_cals = warmstart_cals
+        current_points = warmstart_points
+        current_rms = warmstart_rms
+        current_ray_convergence = warmstart_ray_convergence
+        current_geometry = warmstart_geometry
+        current_geometry_max = warmstart_geometry_max
+        current_correspondence = warmstart_correspondence
+        current_correspondence_rate = warmstart_correspondence_rate
+
+    if pose_release_camera_order is None:
+        release_order = [
+            camera_index
+            for camera_index in range(len(cals))
+            if camera_index not in (fixed_camera_indices or [])
+        ]
+    else:
+        release_order = [int(camera_index) for camera_index in pose_release_camera_order]
+    if not release_order:
+        raise ValueError("pose_release_camera_order must not be empty")
+
+    alternating_result: Dict[str, object] = {
+        "warmstart_result": warmstart_result,
+        "stages": [],
+    }
+    block_summaries: List[Dict[str, object]] = []
+    pose_ok = False
+    pose_geometry_ok = True
+    pose_correspondence_ok = True
+    released_cameras: List[int] = []
+
+    for stage_index, released_camera in enumerate(release_order, start=1):
+        released_cameras.append(released_camera)
+        stage_fixed = [
+            camera_index
+            for camera_index in range(len(cals))
+            if camera_index not in released_cameras
+        ]
+        stage_completed = True
+        for block_index, block in enumerate(normalized_pose_block_configs, start=1):
+            block_config = dict(block)
+            optimize_extrinsics = cast(
+                bool,
+                block_config.get("optimize_extrinsics", True),
+            )
+            optimize_points = cast(bool, block_config.get("optimize_points", True))
+            block_bounds = merge_bounds(
+                pose_parameter_bounds,
+                cast(
+                    Optional[Dict[str, Tuple[float, float]]],
+                    block_config.get("parameter_bounds"),
+                ),
+            )
+            if cast(bool, block_config.get("freeze_translation", False)):
+                block_bounds = merge_bounds(
+                    block_bounds,
+                    {"x0": (0.0, 0.0), "y0": (0.0, 0.0), "z0": (0.0, 0.0)},
+                )
+            if cast(bool, block_config.get("freeze_rotation", False)):
+                block_bounds = merge_bounds(
+                    block_bounds,
+                    {
+                        "omega": (0.0, 0.0),
+                        "phi": (0.0, 0.0),
+                        "kappa": (0.0, 0.0),
+                    },
+                )
+
+            block_known_points = known_points if optimize_points else None
+            block_known_point_sigmas = known_point_sigmas if optimize_points else None
+            block_cals, block_points, block_result = multi_camera_bundle_adjustment(
+                observed_pixels,
+                current_cals,
+                cpar,
+                pose_orient_par,
+                point_init=current_points,
+                fixed_camera_indices=stage_fixed,
+                loss=cast(str, block_config.get("loss", pose_loss)),
+                method=cast(str, block_config.get("method", pose_method)),
+                prior_sigmas=cast(
+                    Optional[Dict[str, float]],
+                    block_config.get("prior_sigmas", pose_prior_sigmas),
+                ),
+                parameter_bounds=block_bounds,
+                max_nfev=cast(Optional[int], block_config.get("max_nfev", pose_max_nfev)),
+                optimize_extrinsics=optimize_extrinsics,
+                optimize_points=optimize_points,
+                known_points=block_known_points,
+                known_point_sigmas=block_known_point_sigmas,
+                x_scale=cast(
+                    Optional[float | Sequence[float] | Dict[str, float]],
+                    block_config.get("x_scale", pose_x_scale),
+                ),
+            )
+            block_rms = reprojection_rms(observed_pixels, block_points, block_cals, cpar)
+            block_ray_convergence = mean_ray_convergence(
+                observed_pixels,
+                block_cals,
+                cpar,
+            )
+            block_geometry = projection_drift_summaries(
+                geometry_reference_cals,
+                block_cals,
+                geometry_reference_points,
+            )
+            block_geometry_max = max_projection_drift(block_geometry)
+            block_correspondence = correspondence_replacement_summary(
+                block_points,
+                block_cals,
+            )
+            block_correspondence_rate = (
+                None
+                if block_correspondence is None
+                else cast(float, block_correspondence["replacement_rate"])
+            )
+            block_geometry_ok = geometry_stage_ok(
+                block_geometry_max,
+                current_geometry_max,
+            )
+            block_correspondence_ok = correspondence_stage_ok(
+                block_correspondence_rate,
+                current_correspondence_rate,
+            )
+            block_ok = block_rms <= current_rms and (
+                not reject_on_ray_convergence
+                or block_ray_convergence <= current_ray_convergence + pose_stage_ray_slack
+            )
+            block_ok = block_ok and block_geometry_ok and block_correspondence_ok
+            block_summaries.append(
+                {
+                    "stage_index": stage_index,
+                    "block_index": block_index,
+                    "block_name": block_config.get("name", f"block_{block_index}"),
+                    "released_camera_index": released_camera,
+                    "free_camera_indices": released_cameras.copy(),
+                    "fixed_camera_indices": stage_fixed,
+                    "reprojection_rms": block_rms,
+                    "mean_ray_convergence": block_ray_convergence,
+                    "geometry": block_geometry,
+                    "geometry_max": block_geometry_max,
+                    "geometry_ok": block_geometry_ok,
+                    "correspondence": block_correspondence,
+                    "correspondence_rate": block_correspondence_rate,
+                    "correspondence_ok": block_correspondence_ok,
+                    "accepted": block_ok or not reject_worse_solution,
+                    "optimize_extrinsics": optimize_extrinsics,
+                    "optimize_points": optimize_points,
+                    "result": block_result,
+                }
+            )
+            cast(List[object], alternating_result["stages"]).append(block_result)
+
+            if reject_worse_solution and not block_ok:
+                stage_completed = False
+                break
+
+            current_cals = block_cals
+            current_points = block_points
+            current_rms = block_rms
+            current_ray_convergence = block_ray_convergence
+            current_geometry = block_geometry
+            current_geometry_max = block_geometry_max
+            current_correspondence = block_correspondence
+            current_correspondence_rate = block_correspondence_rate
+            pose_ok = True
+            pose_geometry_ok = block_geometry_ok
+            pose_correspondence_ok = block_correspondence_ok
+
+        if reject_worse_solution and not stage_completed:
+            break
+
+    pose_cals = current_cals
+    pose_points = current_points
+    pose_rms = current_rms
+    pose_ray_convergence = current_ray_convergence
+    pose_geometry = current_geometry
+    pose_geometry_max = current_geometry_max
+    pose_correspondence = current_correspondence
+    pose_correspondence_rate = current_correspondence_rate
+
+    intrinsic_fixed = list(range(len(cals)))
+    intrinsic_cals, intrinsic_points, intrinsic_result = multi_camera_bundle_adjustment(
+        observed_pixels,
+        pose_cals,
+        cpar,
+        intrinsic_orient_par,
+        point_init=pose_points,
+        fixed_camera_indices=intrinsic_fixed,
+        loss=intrinsic_loss,
+        method=intrinsic_method,
+        prior_sigmas=intrinsic_prior_sigmas,
+        parameter_bounds=intrinsic_parameter_bounds,
+        max_nfev=intrinsic_max_nfev,
+        optimize_extrinsics=False,
+        optimize_points=False,
+        x_scale=intrinsic_x_scale,
+        ftol=intrinsic_ftol,
+        xtol=intrinsic_xtol,
+        gtol=intrinsic_gtol,
+    )
+    intrinsic_rms = reprojection_rms(
+        observed_pixels, intrinsic_points, intrinsic_cals, cpar
+    )
+    intrinsic_ray_convergence = mean_ray_convergence(
+        observed_pixels, intrinsic_cals, cpar
+    )
+    intrinsic_geometry = projection_drift_summaries(
+        geometry_reference_cals,
+        intrinsic_cals,
+        geometry_reference_points,
+    )
+    intrinsic_geometry_max = max_projection_drift(intrinsic_geometry)
+    intrinsic_correspondence = correspondence_replacement_summary(
+        intrinsic_points,
+        intrinsic_cals,
+    )
+    intrinsic_correspondence_rate = (
+        None
+        if intrinsic_correspondence is None
+        else cast(float, intrinsic_correspondence["replacement_rate"])
+    )
+
+    accepted_stage = "intrinsics"
+    final_cals = intrinsic_cals
+    final_points = intrinsic_points
+    final_rms = intrinsic_rms
+    final_ray_convergence = intrinsic_ray_convergence
+    intrinsic_ok = intrinsic_rms <= pose_rms and (
+        not reject_on_ray_convergence
+        or intrinsic_ray_convergence <= pose_ray_convergence
+    )
+    intrinsic_ok = intrinsic_ok and geometry_stage_ok(
+        intrinsic_geometry_max,
+        pose_geometry_max,
+    )
+    intrinsic_ok = intrinsic_ok and correspondence_stage_ok(
+        intrinsic_correspondence_rate,
+        pose_correspondence_rate,
+    )
+
+    if reject_worse_solution:
+        if not pose_ok:
+            if warmstart_ok:
+                accepted_stage = "warmstart"
+                final_cals = warmstart_cals
+                final_points = warmstart_points
+                final_rms = warmstart_rms
+                final_ray_convergence = warmstart_ray_convergence
+            else:
+                accepted_stage = "baseline"
+                final_cals = base_cals
+                final_points = base_points
+                final_rms = baseline_rms
+                final_ray_convergence = baseline_ray_convergence
+        elif not intrinsic_ok:
+            accepted_stage = "pose_blocks"
+            final_cals = pose_cals
+            final_points = pose_points
+            final_rms = pose_rms
+            final_ray_convergence = pose_ray_convergence
+
+    summary = {
+        "baseline_reprojection_rms": baseline_rms,
+        "baseline_mean_ray_convergence": baseline_ray_convergence,
+        "baseline_cals": base_cals,
+        "baseline_points": base_points,
+        "baseline_geometry": baseline_geometry,
+        "baseline_geometry_max": baseline_geometry_max,
+        "baseline_correspondence": baseline_correspondence,
+        "baseline_correspondence_rate": baseline_correspondence_rate,
+        "warmstart_reprojection_rms": warmstart_rms,
+        "warmstart_mean_ray_convergence": warmstart_ray_convergence,
+        "warmstart_cals": warmstart_cals,
+        "warmstart_points": warmstart_points,
+        "warmstart_geometry": warmstart_geometry,
+        "warmstart_geometry_max": warmstart_geometry_max,
+        "warmstart_correspondence": warmstart_correspondence,
+        "warmstart_correspondence_rate": warmstart_correspondence_rate,
+        "warmstart_ok": warmstart_ok,
+        "pose_reprojection_rms": pose_rms,
+        "pose_mean_ray_convergence": pose_ray_convergence,
+        "pose_cals": pose_cals,
+        "pose_points": pose_points,
+        "pose_geometry": pose_geometry,
+        "pose_geometry_max": pose_geometry_max,
+        "pose_geometry_ok": pose_geometry_ok,
+        "pose_release_camera_order": release_order,
+        "pose_stage_ray_slack": pose_stage_ray_slack,
+        "pose_block_configs": normalized_pose_block_configs,
+        "pose_block_summaries": block_summaries,
+        "accepted_pose_block_count": len(
+            [block for block in block_summaries if block["accepted"]]
+        ),
+        "pose_correspondence": pose_correspondence,
+        "pose_correspondence_rate": pose_correspondence_rate,
+        "pose_correspondence_ok": pose_correspondence_ok,
+        "intrinsic_reprojection_rms": intrinsic_rms,
+        "intrinsic_mean_ray_convergence": intrinsic_ray_convergence,
+        "intrinsic_cals": intrinsic_cals,
+        "intrinsic_points": intrinsic_points,
+        "intrinsic_geometry": intrinsic_geometry,
+        "intrinsic_geometry_max": intrinsic_geometry_max,
+        "intrinsic_correspondence": intrinsic_correspondence,
+        "intrinsic_correspondence_rate": intrinsic_correspondence_rate,
+        "geometry_guard_mode": geometry_guard_mode,
+        "geometry_guard_threshold": geometry_guard_threshold,
+        "correspondence_guard_mode": correspondence_guard_mode,
+        "correspondence_guard_threshold": correspondence_guard_threshold,
+        "correspondence_guard_reference_rate": correspondence_guard_reference_rate,
+        "accepted_stage": accepted_stage,
+        "final_reprojection_rms": final_rms,
+        "final_mean_ray_convergence": final_ray_convergence,
+        "warmstart_result": warmstart_result,
+        "pose_result": alternating_result,
         "intrinsic_result": intrinsic_result,
     }
 

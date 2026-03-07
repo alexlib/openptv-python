@@ -19,6 +19,7 @@ from .calibration_compare import (
 from .epi import epipolar_curve
 from .imgcoord import image_coordinates, img_coord
 from .orientation import (
+    alternating_bundle_adjustment,
     guarded_two_step_bundle_adjustment,
     initialize_bundle_adjustment_points,
     mean_ray_convergence,
@@ -1361,6 +1362,42 @@ def default_experiments(
                 "correspondence_guard_reference_rate": correspondence_guard_reference_rate,
             },
         ),
+        ExperimentSpec(
+            name="intrinsics_first_alternating_stagewise_release",
+            description=(
+                "Intrinsics-only warm start followed by alternating "
+                "point/rotation/translation guarded updates"
+            ),
+            mode="alternating",
+            ba_kwargs={
+                "pose_orient_par": OrientPar(),
+                "intrinsic_orient_par": intrinsics,
+                "fixed_camera_indices": staged_fixed,
+                "pose_release_camera_order": staged_order,
+                "pose_stage_ray_slack": pose_stage_ray_slack,
+                "pose_prior_sigmas": pose_priors,
+                "pose_parameter_bounds": pose_bounds,
+                "pose_max_nfev": 4,
+                "pose_x_scale": {
+                    "x0": 0.02,
+                    "y0": 0.02,
+                    "z0": 0.02,
+                    "omega": 2e-4,
+                    "phi": 2e-4,
+                    "kappa": 2e-4,
+                    "points": 0.1,
+                },
+                "pose_block_configs": intrinsics_first_pose_stage_configs,
+                "intrinsic_prior_sigmas": tight_intrinsic_priors,
+                "intrinsic_parameter_bounds": tight_intrinsic_bounds,
+                "intrinsic_max_nfev": 4,
+                "geometry_guard_mode": geometry_guard_mode,
+                "geometry_guard_threshold": geometry_guard_threshold,
+                "correspondence_guard_mode": correspondence_guard_mode,
+                "correspondence_guard_threshold": correspondence_guard_threshold,
+                "correspondence_guard_reference_rate": correspondence_guard_reference_rate,
+            },
+        ),
     ]
 
     if known_points:
@@ -1867,6 +1904,127 @@ def run_experiment(
         notes = (
             f"warmstart_success={warmstart_success}; "
             f"warmstart_rms={warmstart_rms:.6f}; "
+            f"accepted_stage={summary['accepted_stage']}"
+        )
+    elif spec.mode == "alternating":
+        pose_orient_par = cast(OrientPar, spec.ba_kwargs["pose_orient_par"])
+        intrinsic_orient_par = cast(OrientPar, spec.ba_kwargs["intrinsic_orient_par"])
+        refined_cals, refined_points, summary = alternating_bundle_adjustment(
+            observed_pixels,
+            working_cals,
+            control,
+            pose_orient_par,
+            intrinsic_orient_par,
+            point_init=point_init,
+            fixed_camera_indices=cast(
+                List[int] | None,
+                spec.ba_kwargs.get("fixed_camera_indices"),
+            ),
+            pose_release_camera_order=cast(
+                List[int] | None,
+                spec.ba_kwargs.get("pose_release_camera_order"),
+            ),
+            pose_stage_ray_slack=cast(
+                float,
+                spec.ba_kwargs.get("pose_stage_ray_slack", 0.0),
+            ),
+            pose_prior_sigmas=cast(
+                Dict[str, float] | None,
+                spec.ba_kwargs.get("pose_prior_sigmas"),
+            ),
+            pose_parameter_bounds=cast(
+                Dict[str, tuple[float, float]] | None,
+                spec.ba_kwargs.get("pose_parameter_bounds"),
+            ),
+            pose_loss=cast(str, spec.ba_kwargs.get("pose_loss", "linear")),
+            pose_method=cast(str, spec.ba_kwargs.get("pose_method", "trf")),
+            pose_max_nfev=cast(int | None, spec.ba_kwargs.get("pose_max_nfev")),
+            pose_x_scale=cast(
+                float | Sequence[float] | Dict[str, float] | None,
+                spec.ba_kwargs.get("pose_x_scale"),
+            ),
+            pose_block_configs=cast(
+                Sequence[Dict[str, object]] | None,
+                spec.ba_kwargs.get("pose_block_configs"),
+            ),
+            intrinsic_prior_sigmas=cast(
+                Dict[str, float] | None,
+                spec.ba_kwargs.get("intrinsic_prior_sigmas"),
+            ),
+            intrinsic_parameter_bounds=cast(
+                Dict[str, tuple[float, float]] | None,
+                spec.ba_kwargs.get("intrinsic_parameter_bounds"),
+            ),
+            intrinsic_loss=cast(
+                str,
+                spec.ba_kwargs.get("intrinsic_loss", "linear"),
+            ),
+            intrinsic_method=cast(
+                str,
+                spec.ba_kwargs.get("intrinsic_method", "trf"),
+            ),
+            intrinsic_max_nfev=cast(
+                int | None,
+                spec.ba_kwargs.get("intrinsic_max_nfev"),
+            ),
+            intrinsic_x_scale=cast(
+                float | Sequence[float] | Dict[str, float] | None,
+                spec.ba_kwargs.get("intrinsic_x_scale"),
+            ),
+            intrinsic_ftol=cast(
+                float | None, spec.ba_kwargs.get("intrinsic_ftol", 1e-12)
+            ),
+            intrinsic_xtol=cast(
+                float | None, spec.ba_kwargs.get("intrinsic_xtol", 1e-12)
+            ),
+            intrinsic_gtol=cast(
+                float | None, spec.ba_kwargs.get("intrinsic_gtol", 1e-12)
+            ),
+            known_points=cast(
+                Dict[int, np.ndarray] | None,
+                spec.ba_kwargs.get("known_points"),
+            ),
+            known_point_sigmas=cast(
+                float | np.ndarray | None,
+                spec.ba_kwargs.get("known_point_sigmas"),
+            ),
+            geometry_reference_points=reference_geometry_points,
+            geometry_reference_cals=reference_cals,
+            geometry_guard_mode=cast(
+                str,
+                spec.ba_kwargs.get("geometry_guard_mode", "off"),
+            ),
+            geometry_guard_threshold=cast(
+                float | None,
+                spec.ba_kwargs.get("geometry_guard_threshold"),
+            ),
+            correspondence_original_ids=(
+                None if tracking_data is None else tracking_data.original_target_ids
+            ),
+            correspondence_point_frame_indices=(
+                None if tracking_data is None else tracking_data.point_frame_indices
+            ),
+            correspondence_frame_target_pixels=(
+                None if tracking_data is None else tracking_data.frame_target_pixels
+            ),
+            correspondence_guard_mode=cast(
+                str,
+                spec.ba_kwargs.get("correspondence_guard_mode", "off"),
+            ),
+            correspondence_guard_threshold=cast(
+                float | None,
+                spec.ba_kwargs.get("correspondence_guard_threshold"),
+            ),
+            correspondence_guard_reference_rate=cast(
+                float | None,
+                spec.ba_kwargs.get("correspondence_guard_reference_rate"),
+            ),
+        )
+        success = True
+        final_rms = cast(float, summary["final_reprojection_rms"])
+        final_ray = cast(float, summary["final_mean_ray_convergence"])
+        notes = (
+            f"warmstart_ok={summary['warmstart_ok']}; "
             f"accepted_stage={summary['accepted_stage']}"
         )
     else:
