@@ -1128,6 +1128,121 @@ def default_experiments(
             },
         },
     ]
+    intrinsics_first_alternating_pose_block_configs = [
+        {
+            "name": "points_only",
+            "optimize_extrinsics": False,
+            "optimize_points": True,
+            "max_nfev": 4,
+            "x_scale": {
+                "points": 0.1,
+            },
+        },
+        {
+            "name": "omega_only",
+            "optimize_extrinsics": True,
+            "optimize_points": False,
+            "freeze_translation": True,
+            "frozen_parameters": ["phi", "kappa"],
+            "prior_sigmas": {
+                "omega": 2e-4,
+            },
+            "parameter_bounds": {
+                "omega": (-0.001, 0.001),
+            },
+            "max_nfev": 3,
+            "x_scale": {
+                "omega": 1e-4,
+            },
+        },
+        {
+            "name": "phi_only",
+            "optimize_extrinsics": True,
+            "optimize_points": False,
+            "freeze_translation": True,
+            "frozen_parameters": ["omega", "kappa"],
+            "prior_sigmas": {
+                "phi": 2e-4,
+            },
+            "parameter_bounds": {
+                "phi": (-0.001, 0.001),
+            },
+            "max_nfev": 3,
+            "x_scale": {
+                "phi": 1e-4,
+            },
+        },
+        {
+            "name": "kappa_only",
+            "optimize_extrinsics": True,
+            "optimize_points": False,
+            "freeze_translation": True,
+            "frozen_parameters": ["omega", "phi"],
+            "prior_sigmas": {
+                "kappa": 2e-4,
+            },
+            "parameter_bounds": {
+                "kappa": (-0.001, 0.001),
+            },
+            "max_nfev": 3,
+            "x_scale": {
+                "kappa": 1e-4,
+            },
+        },
+        {
+            "name": "translation_only",
+            "optimize_extrinsics": True,
+            "optimize_points": False,
+            "freeze_rotation": True,
+            "prior_sigmas": {
+                "x0": 0.02,
+                "y0": 0.02,
+                "z0": 0.02,
+            },
+            "parameter_bounds": {
+                "x0": (-0.05, 0.05),
+                "y0": (-0.05, 0.05),
+                "z0": (-0.05, 0.05),
+            },
+            "max_nfev": 4,
+            "x_scale": {
+                "x0": 0.01,
+                "y0": 0.01,
+                "z0": 0.01,
+            },
+        },
+        {
+            "name": "joint_pose_points",
+            "optimize_extrinsics": True,
+            "optimize_points": True,
+            "prior_sigmas": {
+                "x0": 0.05,
+                "y0": 0.05,
+                "z0": 0.05,
+                "omega": 5e-4,
+                "phi": 5e-4,
+                "kappa": 5e-4,
+            },
+            "parameter_bounds": {
+                "x0": (-0.1, 0.1),
+                "y0": (-0.1, 0.1),
+                "z0": (-0.1, 0.1),
+                "omega": (-0.002, 0.002),
+                "phi": (-0.002, 0.002),
+                "kappa": (-0.002, 0.002),
+            },
+            "max_nfev": 4,
+            "x_scale": {
+                "x0": 0.02,
+                "y0": 0.02,
+                "z0": 0.02,
+                "omega": 2e-4,
+                "phi": 2e-4,
+                "kappa": 2e-4,
+                "points": 0.1,
+            },
+        },
+    ]
     known_point_pose_stage_configs = [
         {
             **stage_config,
@@ -1387,15 +1502,17 @@ def default_experiments(
                     "kappa": 2e-4,
                     "points": 0.1,
                 },
-                "pose_block_configs": intrinsics_first_pose_stage_configs,
+                "pose_block_configs": intrinsics_first_alternating_pose_block_configs,
                 "intrinsic_prior_sigmas": tight_intrinsic_priors,
                 "intrinsic_parameter_bounds": tight_intrinsic_bounds,
                 "intrinsic_max_nfev": 4,
                 "geometry_guard_mode": geometry_guard_mode,
                 "geometry_guard_threshold": geometry_guard_threshold,
+                "first_release_geometry_slack": 0.35,
                 "correspondence_guard_mode": correspondence_guard_mode,
                 "correspondence_guard_threshold": correspondence_guard_threshold,
                 "correspondence_guard_reference_rate": correspondence_guard_reference_rate,
+                "first_release_correspondence_slack": 0.02,
             },
         ),
     ]
@@ -1437,7 +1554,6 @@ def default_experiments(
                             "omega": 5e-4,
                             "phi": 5e-4,
                             "kappa": 5e-4,
-                            "points": 0.1,
                         },
                         "pose_stage_configs": known_point_pose_stage_configs,
                         "intrinsic_prior_sigmas": tight_intrinsic_priors,
@@ -1724,40 +1840,44 @@ def run_experiment(
         notes = f"accepted_stage={summary['accepted_stage']}"
     elif spec.mode == "intrinsics_then_guarded":
         warmstart_orient_par = cast(OrientPar, spec.ba_kwargs["warmstart_orient_par"])
-        warmstart_cals, warmstart_points, warmstart_result = multi_camera_bundle_adjustment(
-            observed_pixels,
-            working_cals,
-            control,
-            warmstart_orient_par,
-            point_init=point_init,
-            fix_first_camera=cast(bool, spec.ba_kwargs.get("fix_first_camera", True)),
-            fixed_camera_indices=cast(
-                List[int] | None,
-                spec.ba_kwargs.get("warmstart_fixed_camera_indices"),
-            ),
-            loss=cast(str, spec.ba_kwargs.get("warmstart_loss", "linear")),
-            method=cast(str, spec.ba_kwargs.get("warmstart_method", "trf")),
-            prior_sigmas=cast(
-                Dict[str, float] | None,
-                spec.ba_kwargs.get("warmstart_prior_sigmas"),
-            ),
-            parameter_bounds=cast(
-                Dict[str, tuple[float, float]] | None,
-                spec.ba_kwargs.get("warmstart_parameter_bounds"),
-            ),
-            max_nfev=cast(int | None, spec.ba_kwargs.get("warmstart_max_nfev")),
-            optimize_extrinsics=cast(
-                bool,
-                spec.ba_kwargs.get("warmstart_optimize_extrinsics", False),
-            ),
-            optimize_points=cast(
-                bool,
-                spec.ba_kwargs.get("warmstart_optimize_points", False),
-            ),
-            x_scale=cast(
-                float | Sequence[float] | Dict[str, float] | None,
-                spec.ba_kwargs.get("warmstart_x_scale"),
-            ),
+        warmstart_cals, warmstart_points, warmstart_result = (
+            multi_camera_bundle_adjustment(
+                observed_pixels,
+                working_cals,
+                control,
+                warmstart_orient_par,
+                point_init=point_init,
+                fix_first_camera=cast(
+                    bool, spec.ba_kwargs.get("fix_first_camera", True)
+                ),
+                fixed_camera_indices=cast(
+                    List[int] | None,
+                    spec.ba_kwargs.get("warmstart_fixed_camera_indices"),
+                ),
+                loss=cast(str, spec.ba_kwargs.get("warmstart_loss", "linear")),
+                method=cast(str, spec.ba_kwargs.get("warmstart_method", "trf")),
+                prior_sigmas=cast(
+                    Dict[str, float] | None,
+                    spec.ba_kwargs.get("warmstart_prior_sigmas"),
+                ),
+                parameter_bounds=cast(
+                    Dict[str, tuple[float, float]] | None,
+                    spec.ba_kwargs.get("warmstart_parameter_bounds"),
+                ),
+                max_nfev=cast(int | None, spec.ba_kwargs.get("warmstart_max_nfev")),
+                optimize_extrinsics=cast(
+                    bool,
+                    spec.ba_kwargs.get("warmstart_optimize_extrinsics", False),
+                ),
+                optimize_points=cast(
+                    bool,
+                    spec.ba_kwargs.get("warmstart_optimize_points", False),
+                ),
+                x_scale=cast(
+                    float | Sequence[float] | Dict[str, float] | None,
+                    spec.ba_kwargs.get("warmstart_x_scale"),
+                ),
+            )
         )
         pose_orient_par = cast(OrientPar, spec.ba_kwargs["pose_orient_par"])
         intrinsic_orient_par = cast(OrientPar, spec.ba_kwargs["intrinsic_orient_par"])
@@ -1897,8 +2017,9 @@ def run_experiment(
         )
         final_rms = cast(float, summary["final_reprojection_rms"])
         final_ray = cast(float, summary["final_mean_ray_convergence"])
-        warmstart_rms = float(
-            cast(Dict[str, object], warmstart_result)["final_reprojection_rms"]
+        warmstart_rms = cast(
+            float,
+            cast(Dict[str, object], warmstart_result)["final_reprojection_rms"],
         )
         success = warmstart_success
         notes = (

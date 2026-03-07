@@ -203,6 +203,51 @@ class TestBundleAdjustment(unittest.TestCase):
         self.assertTrue(result.success)
         np.testing.assert_allclose(refined_points, points)
 
+    def test_multi_camera_bundle_adjustment_accepts_zero_width_parameter_bounds(self):
+        points = np.array(
+            [
+                [-10.0, -10.0, 0.0],
+                [10.0, -10.0, 1.0],
+                [-10.0, 10.0, -1.0],
+                [10.0, 10.0, 0.5],
+            ],
+            dtype=float,
+        )
+        observed_pixels = np.empty((len(points), 4, 2), dtype=float)
+        for cam_num, cal in enumerate(self.true_cals):
+            observed_pixels[:, cam_num, :] = arr_metric_to_pixel(
+                image_coordinates(points, cal, self.control.mm), self.control
+            )
+
+        start_cals = self.lightly_perturb_calibrations(self.true_cals)
+        refined_cals, refined_points, result = multi_camera_bundle_adjustment(
+            observed_pixels,
+            start_cals,
+            self.control,
+            OrientPar(),
+            point_init=points.copy(),
+            fixed_camera_indices=[0, 1, 2],
+            optimize_points=False,
+            loss="linear",
+            method="trf",
+            max_nfev=5,
+            parameter_bounds={
+                "phi": (0.0, 0.0),
+            },
+            prior_sigmas={
+                "x0": 1.0,
+                "y0": 1.0,
+                "z0": 1.0,
+                "omega": 0.01,
+                "phi": 0.01,
+                "kappa": 0.01,
+            },
+        )
+
+        self.assertTrue(result.success, msg=result.message)
+        self.assertEqual(refined_points.shape, points.shape)
+        self.assertEqual(len(refined_cals), 4)
+
     def test_cavity_reprojection_improves(self):
         cavity_dir = Path("tests/testing_fodder/test_cavity")
         control = ControlPar(4).from_file(cavity_dir / "parameters/ptv.par")
@@ -928,12 +973,36 @@ class TestBundleAdjustment(unittest.TestCase):
             )
 
         staged_returns = [
-            (self.true_cals, points.copy(), {"success": True, "final_reprojection_rms": 9.5}),
-            (self.true_cals, points.copy(), {"success": True, "final_reprojection_rms": 9.0}),
-            (self.true_cals, points.copy(), {"success": True, "final_reprojection_rms": 8.5}),
-            (self.true_cals, points.copy(), {"success": True, "final_reprojection_rms": 8.0}),
-            (self.true_cals, points.copy(), {"success": True, "final_reprojection_rms": 7.5}),
-            (self.true_cals, points.copy(), {"success": True, "final_reprojection_rms": 7.0}),
+            (
+                self.true_cals,
+                points.copy(),
+                {"success": True, "final_reprojection_rms": 9.5},
+            ),
+            (
+                self.true_cals,
+                points.copy(),
+                {"success": True, "final_reprojection_rms": 9.0},
+            ),
+            (
+                self.true_cals,
+                points.copy(),
+                {"success": True, "final_reprojection_rms": 8.5},
+            ),
+            (
+                self.true_cals,
+                points.copy(),
+                {"success": True, "final_reprojection_rms": 8.0},
+            ),
+            (
+                self.true_cals,
+                points.copy(),
+                {"success": True, "final_reprojection_rms": 7.5},
+            ),
+            (
+                self.true_cals,
+                points.copy(),
+                {"success": True, "final_reprojection_rms": 7.0},
+            ),
         ]
 
         with (
@@ -985,9 +1054,13 @@ class TestBundleAdjustment(unittest.TestCase):
             fixed_sequences,
             [[0, 1, 2, 3], [1, 2, 3], [1, 2, 3], [2, 3], [2, 3], [0, 1, 2, 3]],
         )
-        self.assertFalse(mocked_adjustment.call_args_list[0].kwargs["optimize_extrinsics"])
+        self.assertFalse(
+            mocked_adjustment.call_args_list[0].kwargs["optimize_extrinsics"]
+        )
         self.assertFalse(mocked_adjustment.call_args_list[0].kwargs["optimize_points"])
-        self.assertFalse(mocked_adjustment.call_args_list[1].kwargs["optimize_extrinsics"])
+        self.assertFalse(
+            mocked_adjustment.call_args_list[1].kwargs["optimize_extrinsics"]
+        )
         self.assertTrue(mocked_adjustment.call_args_list[1].kwargs["optimize_points"])
         self.assertEqual(
             mocked_adjustment.call_args_list[2].kwargs["parameter_bounds"]["x0"],
@@ -999,6 +1072,248 @@ class TestBundleAdjustment(unittest.TestCase):
             [block["block_name"] for block in summary["pose_block_summaries"]],
             ["points_only", "rotation_only", "points_only", "rotation_only"],
         )
+
+    def test_alternating_bundle_adjustment_freezes_requested_rotation_axes(self):
+        points = np.array(
+            [
+                [-10.0, -10.0, 0.0],
+                [10.0, -10.0, 1.0],
+                [-10.0, 10.0, -1.0],
+                [10.0, 10.0, 0.5],
+            ],
+            dtype=float,
+        )
+        observed_pixels = np.empty((len(points), 4, 2), dtype=float)
+        for cam_num, cal in enumerate(self.true_cals):
+            observed_pixels[:, cam_num, :] = arr_metric_to_pixel(
+                image_coordinates(points, cal, self.control.mm), self.control
+            )
+
+        staged_returns = [
+            (
+                self.true_cals,
+                points.copy(),
+                {"success": True, "final_reprojection_rms": 9.5},
+            ),
+            (
+                self.true_cals,
+                points.copy(),
+                {"success": True, "final_reprojection_rms": 9.0},
+            ),
+            (
+                self.true_cals,
+                points.copy(),
+                {"success": True, "final_reprojection_rms": 8.5},
+            ),
+        ]
+
+        with (
+            patch(
+                "openptv_python.orientation.multi_camera_bundle_adjustment",
+                side_effect=staged_returns,
+            ) as mocked_adjustment,
+            patch(
+                "openptv_python.orientation.reprojection_rms",
+                side_effect=[10.0, 9.5, 9.0, 8.5],
+            ),
+            patch(
+                "openptv_python.orientation.mean_ray_convergence",
+                side_effect=[6.0, 5.5, 5.0, 4.5],
+            ),
+        ):
+            _, _, summary = alternating_bundle_adjustment(
+                observed_pixels,
+                self.lightly_perturb_calibrations(self.true_cals),
+                self.control,
+                OrientPar(),
+                OrientPar(),
+                point_init=points,
+                pose_release_camera_order=[0],
+                pose_block_configs=[
+                    {
+                        "name": "omega_only",
+                        "optimize_extrinsics": True,
+                        "optimize_points": False,
+                        "freeze_translation": True,
+                        "frozen_parameters": ["phi", "kappa"],
+                        "max_nfev": 3,
+                    },
+                ],
+                intrinsic_max_nfev=4,
+            )
+
+        self.assertEqual(summary["accepted_pose_block_count"], 1)
+        self.assertEqual(
+            mocked_adjustment.call_args_list[1].kwargs["parameter_bounds"]["x0"],
+            (0.0, 0.0),
+        )
+        self.assertEqual(
+            mocked_adjustment.call_args_list[1].kwargs["parameter_bounds"]["phi"],
+            (0.0, 0.0),
+        )
+        self.assertEqual(
+            mocked_adjustment.call_args_list[1].kwargs["parameter_bounds"]["kappa"],
+            (0.0, 0.0),
+        )
+
+    def test_alternating_bundle_adjustment_softens_first_release_geometry_guard(self):
+        points = np.array(
+            [
+                [-10.0, -10.0, 0.0],
+                [10.0, -10.0, 1.0],
+                [-10.0, 10.0, -1.0],
+                [10.0, 10.0, 0.5],
+            ],
+            dtype=float,
+        )
+        observed_pixels = np.empty((len(points), 4, 2), dtype=float)
+        for cam_num, cal in enumerate(self.true_cals):
+            observed_pixels[:, cam_num, :] = arr_metric_to_pixel(
+                image_coordinates(points, cal, self.control.mm), self.control
+            )
+
+        shifted_cals = [self.clone_calibration(cal) for cal in self.true_cals]
+        shifted_cals[0].set_angles(
+            shifted_cals[0].get_angles() + np.array([0.0, 0.0015, 0.0])
+        )
+        geometry_reference_points = np.array(
+            [
+                [-15.0, -10.0, -2.0],
+                [12.0, -8.0, 1.0],
+                [-9.0, 14.0, 3.0],
+                [8.0, 6.0, -1.0],
+            ],
+            dtype=float,
+        )
+
+        def run_with_threshold(
+            threshold: float,
+            slack: float,
+        ) -> dict[str, object]:
+            with (
+                patch(
+                    "openptv_python.orientation.multi_camera_bundle_adjustment",
+                    side_effect=[
+                        (
+                            self.true_cals,
+                            points.copy(),
+                            {"success": True, "stage": "warmstart"},
+                        ),
+                        (
+                            shifted_cals,
+                            points.copy(),
+                            {"success": True, "stage": "omega"},
+                        ),
+                        (
+                            self.true_cals,
+                            points.copy(),
+                            {"success": True, "stage": "intrinsics"},
+                        ),
+                    ],
+                ),
+                patch(
+                    "openptv_python.orientation.reprojection_rms",
+                    side_effect=[10.0, 9.8, 9.6, 9.5],
+                ),
+                patch(
+                    "openptv_python.orientation.mean_ray_convergence",
+                    side_effect=[6.0, 5.9, 5.8, 5.7],
+                ),
+            ):
+                _, _, summary = alternating_bundle_adjustment(
+                    observed_pixels,
+                    [self.clone_calibration(cal) for cal in self.true_cals],
+                    self.control,
+                    OrientPar(),
+                    OrientPar(),
+                    point_init=points,
+                    pose_release_camera_order=[0],
+                    pose_block_configs=[
+                        {
+                            "name": "omega_only",
+                            "optimize_extrinsics": True,
+                            "optimize_points": False,
+                            "freeze_translation": True,
+                            "frozen_parameters": ["phi", "kappa"],
+                            "max_nfev": 3,
+                        },
+                    ],
+                    geometry_reference_points=geometry_reference_points,
+                    geometry_reference_cals=[
+                        self.clone_calibration(cal) for cal in self.true_cals
+                    ],
+                    geometry_guard_mode="hard",
+                    geometry_guard_threshold=threshold,
+                    first_release_geometry_slack=slack,
+                    intrinsic_max_nfev=4,
+                )
+            return summary
+
+        measured = run_with_threshold(1e6, 0.0)
+        geometry_max = float(measured["pose_block_summaries"][0]["geometry_max"])
+
+        rejected = run_with_threshold(geometry_max - 1e-6, 0.0)
+        rejected_block = rejected["pose_block_summaries"][0]
+        self.assertFalse(rejected_block["accepted"])
+
+        with (
+            patch(
+                "openptv_python.orientation.multi_camera_bundle_adjustment",
+                side_effect=[
+                    (
+                        self.true_cals,
+                        points.copy(),
+                        {"success": True, "stage": "warmstart"},
+                    ),
+                    (shifted_cals, points.copy(), {"success": True, "stage": "omega"}),
+                    (
+                        self.true_cals,
+                        points.copy(),
+                        {"success": True, "stage": "intrinsics"},
+                    ),
+                ],
+            ),
+            patch(
+                "openptv_python.orientation.reprojection_rms",
+                side_effect=[10.0, 9.8, 9.6, 9.5],
+            ),
+            patch(
+                "openptv_python.orientation.mean_ray_convergence",
+                side_effect=[6.0, 5.9, 5.8, 5.7],
+            ),
+        ):
+            _, _, softened = alternating_bundle_adjustment(
+                observed_pixels,
+                [self.clone_calibration(cal) for cal in self.true_cals],
+                self.control,
+                OrientPar(),
+                OrientPar(),
+                point_init=points,
+                pose_release_camera_order=[0],
+                pose_block_configs=[
+                    {
+                        "name": "omega_only",
+                        "optimize_extrinsics": True,
+                        "optimize_points": False,
+                        "freeze_translation": True,
+                        "frozen_parameters": ["phi", "kappa"],
+                        "max_nfev": 3,
+                    },
+                ],
+                geometry_reference_points=geometry_reference_points,
+                geometry_reference_cals=[
+                    self.clone_calibration(cal) for cal in self.true_cals
+                ],
+                geometry_guard_mode="hard",
+                geometry_guard_threshold=geometry_max - 1e-6,
+                first_release_geometry_slack=2e-6,
+                intrinsic_max_nfev=4,
+            )
+
+        softened_block = softened["pose_block_summaries"][0]
+        self.assertTrue(softened_block["accepted"])
+        self.assertTrue(softened_block["first_release_soft_geometry"])
+        self.assertEqual(softened["accepted_pose_block_count"], 1)
 
     def test_guarded_two_step_bundle_adjustment_stagewise_ray_slack_allows_near_miss(
         self,

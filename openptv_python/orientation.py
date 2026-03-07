@@ -1355,8 +1355,18 @@ def _expand_parameter_limits(
                 continue
             low_delta, high_delta = limits[name]
             base_value = base_blocks[block_index][param_index]
-            lower.append(base_value + low_delta)
-            upper.append(base_value + high_delta)
+            lower_bound = base_value + low_delta
+            upper_bound = base_value + high_delta
+            if (
+                np.isfinite(lower_bound)
+                and np.isfinite(upper_bound)
+                and lower_bound == upper_bound
+            ):
+                epsilon = 32.0 * np.finfo(np.float64).eps * max(1.0, abs(lower_bound))
+                lower_bound -= epsilon
+                upper_bound += epsilon
+            lower.append(lower_bound)
+            upper.append(upper_bound)
 
     return np.asarray(lower, dtype=np.float64), np.asarray(upper, dtype=np.float64)
 
@@ -1396,16 +1406,16 @@ def _bundle_adjustment_x_scale(
 
         return np.asarray(values, dtype=np.float64)
 
-    values = np.asarray(x_scale, dtype=np.float64)
-    if values.ndim != 1:
+    sequence_values = np.asarray(x_scale, dtype=np.float64)
+    if sequence_values.ndim != 1:
         raise ValueError("x_scale sequence must be one-dimensional")
-    if values.size != total_parameters:
+    if sequence_values.size != total_parameters:
         raise ValueError(
-            f"x_scale sequence must have length {total_parameters}, got {values.size}"
+            f"x_scale sequence must have length {total_parameters}, got {sequence_values.size}"
         )
-    if np.any(values <= 0):
+    if np.any(sequence_values <= 0):
         raise ValueError("x_scale entries must be strictly positive")
-    return values.copy()
+    return sequence_values.copy()
 
 
 def _bundle_adjustment_jacobian_sparsity(
@@ -2100,29 +2110,33 @@ def guarded_two_step_bundle_adjustment(
         pose_correspondence_ok = True
 
         for micro_stage_index, variant in enumerate(pose_stage_variants_list, start=1):
-            candidate_cals, candidate_points, candidate_result = multi_camera_bundle_adjustment(
-                observed_pixels,
-                stage_cals,
-                cpar,
-                pose_orient_par,
-                point_init=stage_points,
-                fixed_camera_indices=fixed_camera_indices,
-                loss=cast(str, variant["loss"]),
-                method=cast(str, variant["method"]),
-                prior_sigmas=cast(Optional[Dict[str, float]], variant["prior_sigmas"]),
-                parameter_bounds=cast(
-                    Optional[Dict[str, Tuple[float, float]]],
-                    variant["parameter_bounds"],
-                ),
-                max_nfev=cast(Optional[int], variant["max_nfev"]),
-                optimize_extrinsics=True,
-                optimize_points=cast(bool, variant["optimize_points"]),
-                known_points=known_points,
-                known_point_sigmas=known_point_sigmas,
-                x_scale=cast(
-                    Optional[float | Sequence[float] | Dict[str, float]],
-                    variant["x_scale"],
-                ),
+            candidate_cals, candidate_points, candidate_result = (
+                multi_camera_bundle_adjustment(
+                    observed_pixels,
+                    stage_cals,
+                    cpar,
+                    pose_orient_par,
+                    point_init=stage_points,
+                    fixed_camera_indices=fixed_camera_indices,
+                    loss=cast(str, variant["loss"]),
+                    method=cast(str, variant["method"]),
+                    prior_sigmas=cast(
+                        Optional[Dict[str, float]], variant["prior_sigmas"]
+                    ),
+                    parameter_bounds=cast(
+                        Optional[Dict[str, Tuple[float, float]]],
+                        variant["parameter_bounds"],
+                    ),
+                    max_nfev=cast(Optional[int], variant["max_nfev"]),
+                    optimize_extrinsics=True,
+                    optimize_points=cast(bool, variant["optimize_points"]),
+                    known_points=known_points,
+                    known_point_sigmas=known_point_sigmas,
+                    x_scale=cast(
+                        Optional[float | Sequence[float] | Dict[str, float]],
+                        variant["x_scale"],
+                    ),
+                )
             )
             candidate_rms = reprojection_rms(
                 observed_pixels, candidate_points, candidate_cals, cpar
@@ -2155,7 +2169,8 @@ def guarded_two_step_bundle_adjustment(
             )
             pose_ok = candidate_rms <= stage_rms and (
                 not reject_on_ray_convergence
-                or candidate_ray_convergence <= stage_ray_convergence + pose_stage_ray_slack
+                or candidate_ray_convergence
+                <= stage_ray_convergence + pose_stage_ray_slack
             )
             pose_ok = pose_ok and pose_geometry_ok and pose_correspondence_ok
             pose_stage_summaries.append(
@@ -2521,18 +2536,24 @@ def alternating_bundle_adjustment(
     geometry_reference_cals: Optional[List[Calibration]] = None,
     geometry_guard_mode: str = "off",
     geometry_guard_threshold: Optional[float] = None,
+    first_release_geometry_slack: float = 0.0,
     correspondence_original_ids: Optional[np.ndarray] = None,
     correspondence_point_frame_indices: Optional[np.ndarray] = None,
     correspondence_frame_target_pixels: Optional[Sequence[Sequence[np.ndarray]]] = None,
     correspondence_guard_mode: str = "off",
     correspondence_guard_threshold: Optional[float] = None,
     correspondence_guard_reference_rate: Optional[float] = None,
+    first_release_correspondence_slack: float = 0.0,
     reject_worse_solution: bool = True,
     reject_on_ray_convergence: bool = True,
 ) -> Tuple[List[Calibration], np.ndarray, Dict[str, object]]:
-    """Run intrinsics-first alternating BA with point/rotation/translation block updates."""
+    """Run intrinsics-first alternating BA with point and pose sub-block updates."""
     if pose_stage_ray_slack < 0:
         raise ValueError("pose_stage_ray_slack must be non-negative")
+    if first_release_geometry_slack < 0:
+        raise ValueError("first_release_geometry_slack must be non-negative")
+    if first_release_correspondence_slack < 0:
+        raise ValueError("first_release_correspondence_slack must be non-negative")
 
     def merge_bounds(
         base: Optional[Dict[str, Tuple[float, float]]],
@@ -2555,18 +2576,43 @@ def alternating_bundle_adjustment(
                 "x_scale": {"points": 0.1},
             },
             {
-                "name": "rotation_only",
+                "name": "omega_only",
                 "optimize_extrinsics": True,
                 "optimize_points": False,
                 "freeze_translation": True,
                 "loss": pose_loss,
                 "method": pose_method,
-                "max_nfev": 4 if pose_max_nfev is None else min(4, pose_max_nfev),
+                "max_nfev": 3 if pose_max_nfev is None else min(3, pose_max_nfev),
                 "x_scale": {
                     "omega": 2e-4,
+                },
+                "frozen_parameters": ["phi", "kappa"],
+            },
+            {
+                "name": "phi_only",
+                "optimize_extrinsics": True,
+                "optimize_points": False,
+                "freeze_translation": True,
+                "loss": pose_loss,
+                "method": pose_method,
+                "max_nfev": 3 if pose_max_nfev is None else min(3, pose_max_nfev),
+                "x_scale": {
                     "phi": 2e-4,
+                },
+                "frozen_parameters": ["omega", "kappa"],
+            },
+            {
+                "name": "kappa_only",
+                "optimize_extrinsics": True,
+                "optimize_points": False,
+                "freeze_translation": True,
+                "loss": pose_loss,
+                "method": pose_method,
+                "max_nfev": 3 if pose_max_nfev is None else min(3, pose_max_nfev),
+                "x_scale": {
                     "kappa": 2e-4,
                 },
+                "frozen_parameters": ["omega", "phi"],
             },
             {
                 "name": "translation_only",
@@ -2643,6 +2689,8 @@ def alternating_bundle_adjustment(
     def geometry_stage_ok(
         candidate_metric: Optional[float],
         baseline_metric: Optional[float],
+        *,
+        threshold_override: Optional[float] = None,
     ) -> bool:
         if geometry_guard_mode == "off" or candidate_metric is None:
             return True
@@ -2651,11 +2699,16 @@ def alternating_bundle_adjustment(
                 return True
             return candidate_metric <= baseline_metric + 1e-12
         if geometry_guard_mode == "hard":
-            if geometry_guard_threshold is None or geometry_guard_threshold <= 0:
+            threshold = (
+                geometry_guard_threshold
+                if threshold_override is None
+                else threshold_override
+            )
+            if threshold is None or threshold <= 0:
                 raise ValueError(
                     "geometry_guard_threshold must be positive when geometry_guard_mode='hard'"
                 )
-            return candidate_metric <= geometry_guard_threshold
+            return candidate_metric <= threshold
         raise ValueError("geometry_guard_mode must be one of 'off', 'soft', or 'hard'")
 
     def correspondence_replacement_summary(
@@ -2724,6 +2777,8 @@ def alternating_bundle_adjustment(
     def correspondence_stage_ok(
         candidate_rate: Optional[float],
         prior_rate: Optional[float],
+        *,
+        threshold_override: Optional[float] = None,
     ) -> bool:
         if correspondence_guard_mode == "off" or candidate_rate is None:
             return True
@@ -2734,14 +2789,19 @@ def alternating_bundle_adjustment(
                 return True
             return candidate_rate <= prior_rate + 1e-12
         if correspondence_guard_mode == "hard":
-            if (
-                correspondence_guard_threshold is None
-                or correspondence_guard_threshold <= 0
-            ):
+            if threshold_override is None and correspondence_guard_threshold is None:
+                threshold = None
+            else:
+                threshold = (
+                    correspondence_guard_threshold
+                    if threshold_override is None
+                    else threshold_override
+                )
+            if threshold is None or threshold <= 0:
                 raise ValueError(
                     "correspondence_guard_threshold must be positive when correspondence_guard_mode='hard'"
                 )
-            return candidate_rate <= correspondence_guard_threshold
+            return candidate_rate <= threshold
         raise ValueError(
             "correspondence_guard_mode must be one of 'off', 'soft', or 'hard'"
         )
@@ -2797,8 +2857,12 @@ def alternating_bundle_adjustment(
         xtol=intrinsic_xtol,
         gtol=intrinsic_gtol,
     )
-    warmstart_rms = reprojection_rms(observed_pixels, warmstart_points, warmstart_cals, cpar)
-    warmstart_ray_convergence = mean_ray_convergence(observed_pixels, warmstart_cals, cpar)
+    warmstart_rms = reprojection_rms(
+        observed_pixels, warmstart_points, warmstart_cals, cpar
+    )
+    warmstart_ray_convergence = mean_ray_convergence(
+        observed_pixels, warmstart_cals, cpar
+    )
     warmstart_geometry = projection_drift_summaries(
         geometry_reference_cals,
         warmstart_cals,
@@ -2853,7 +2917,9 @@ def alternating_bundle_adjustment(
             if camera_index not in (fixed_camera_indices or [])
         ]
     else:
-        release_order = [int(camera_index) for camera_index in pose_release_camera_order]
+        release_order = [
+            int(camera_index) for camera_index in pose_release_camera_order
+        ]
     if not release_order:
         raise ValueError("pose_release_camera_order must not be empty")
 
@@ -2889,18 +2955,27 @@ def alternating_bundle_adjustment(
                     block_config.get("parameter_bounds"),
                 ),
             )
+            frozen_parameters = set(
+                cast(Sequence[str], block_config.get("frozen_parameters", []))
+            )
             if cast(bool, block_config.get("freeze_translation", False)):
-                block_bounds = merge_bounds(
-                    block_bounds,
-                    {"x0": (0.0, 0.0), "y0": (0.0, 0.0), "z0": (0.0, 0.0)},
-                )
+                frozen_parameters.update({"x0", "y0", "z0"})
             if cast(bool, block_config.get("freeze_rotation", False)):
+                frozen_parameters.update({"omega", "phi", "kappa"})
+            unknown_frozen = frozen_parameters.difference(
+                {"x0", "y0", "z0", "omega", "phi", "kappa"}
+            )
+            if unknown_frozen:
+                raise ValueError(
+                    "Unsupported frozen_parameters entries: "
+                    + ", ".join(sorted(unknown_frozen))
+                )
+            if frozen_parameters:
                 block_bounds = merge_bounds(
                     block_bounds,
                     {
-                        "omega": (0.0, 0.0),
-                        "phi": (0.0, 0.0),
-                        "kappa": (0.0, 0.0),
+                        parameter_name: (0.0, 0.0)
+                        for parameter_name in sorted(frozen_parameters)
                     },
                 )
 
@@ -2920,7 +2995,9 @@ def alternating_bundle_adjustment(
                     block_config.get("prior_sigmas", pose_prior_sigmas),
                 ),
                 parameter_bounds=block_bounds,
-                max_nfev=cast(Optional[int], block_config.get("max_nfev", pose_max_nfev)),
+                max_nfev=cast(
+                    Optional[int], block_config.get("max_nfev", pose_max_nfev)
+                ),
                 optimize_extrinsics=optimize_extrinsics,
                 optimize_points=optimize_points,
                 known_points=block_known_points,
@@ -2930,7 +3007,9 @@ def alternating_bundle_adjustment(
                     block_config.get("x_scale", pose_x_scale),
                 ),
             )
-            block_rms = reprojection_rms(observed_pixels, block_points, block_cals, cpar)
+            block_rms = reprojection_rms(
+                observed_pixels, block_points, block_cals, cpar
+            )
             block_ray_convergence = mean_ray_convergence(
                 observed_pixels,
                 block_cals,
@@ -2951,17 +3030,46 @@ def alternating_bundle_adjustment(
                 if block_correspondence is None
                 else cast(float, block_correspondence["replacement_rate"])
             )
+            first_release_soft_geometry = (
+                stage_index == 1
+                and optimize_extrinsics
+                and geometry_guard_mode == "hard"
+                and first_release_geometry_slack > 0
+                and geometry_guard_threshold is not None
+            )
+            first_release_soft_correspondence = (
+                stage_index == 1
+                and optimize_extrinsics
+                and correspondence_guard_mode == "hard"
+                and first_release_correspondence_slack > 0
+                and correspondence_guard_threshold is not None
+            )
+            geometry_threshold_override = None
+            if first_release_soft_geometry:
+                geometry_guard_limit = cast(float, geometry_guard_threshold)
+                geometry_threshold_override = (
+                    geometry_guard_limit + first_release_geometry_slack
+                )
+            correspondence_threshold_override = None
+            if first_release_soft_correspondence:
+                correspondence_guard_limit = cast(float, correspondence_guard_threshold)
+                correspondence_threshold_override = (
+                    correspondence_guard_limit + first_release_correspondence_slack
+                )
             block_geometry_ok = geometry_stage_ok(
                 block_geometry_max,
                 current_geometry_max,
+                threshold_override=geometry_threshold_override,
             )
             block_correspondence_ok = correspondence_stage_ok(
                 block_correspondence_rate,
                 current_correspondence_rate,
+                threshold_override=correspondence_threshold_override,
             )
             block_ok = block_rms <= current_rms and (
                 not reject_on_ray_convergence
-                or block_ray_convergence <= current_ray_convergence + pose_stage_ray_slack
+                or block_ray_convergence
+                <= current_ray_convergence + pose_stage_ray_slack
             )
             block_ok = block_ok and block_geometry_ok and block_correspondence_ok
             block_summaries.append(
@@ -2977,9 +3085,11 @@ def alternating_bundle_adjustment(
                     "geometry": block_geometry,
                     "geometry_max": block_geometry_max,
                     "geometry_ok": block_geometry_ok,
+                    "first_release_soft_geometry": first_release_soft_geometry,
                     "correspondence": block_correspondence,
                     "correspondence_rate": block_correspondence_rate,
                     "correspondence_ok": block_correspondence_ok,
+                    "first_release_soft_correspondence": first_release_soft_correspondence,
                     "accepted": block_ok or not reject_worse_solution,
                     "optimize_extrinsics": optimize_extrinsics,
                     "optimize_points": optimize_points,
@@ -3142,9 +3252,11 @@ def alternating_bundle_adjustment(
         "intrinsic_correspondence_rate": intrinsic_correspondence_rate,
         "geometry_guard_mode": geometry_guard_mode,
         "geometry_guard_threshold": geometry_guard_threshold,
+        "first_release_geometry_slack": first_release_geometry_slack,
         "correspondence_guard_mode": correspondence_guard_mode,
         "correspondence_guard_threshold": correspondence_guard_threshold,
         "correspondence_guard_reference_rate": correspondence_guard_reference_rate,
+        "first_release_correspondence_slack": first_release_correspondence_slack,
         "accepted_stage": accepted_stage,
         "final_reprojection_rms": final_rms,
         "final_mean_ray_convergence": final_ray_convergence,

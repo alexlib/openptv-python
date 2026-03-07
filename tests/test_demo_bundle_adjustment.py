@@ -6,7 +6,6 @@ import numpy as np
 
 from openptv_python.calibration import read_calibration
 from openptv_python.demo_bundle_adjustment import (
-    ExperimentSpec,
     ExperimentResult,
     all_fixed_camera_pairs,
     build_experiment_start_calibrations,
@@ -106,12 +105,27 @@ class TestBundleAdjustmentDemo(unittest.TestCase):
         )
         self.assertEqual(staged_spec.ba_kwargs["pose_stage_ray_slack"], 0.0)
         self.assertEqual(len(staged_spec.ba_kwargs["pose_stage_configs"]), 3)
-        self.assertFalse(staged_spec.ba_kwargs["pose_stage_configs"][0]["optimize_points"])
-        self.assertTrue(staged_spec.ba_kwargs["pose_stage_configs"][1]["optimize_points"])
-        self.assertTrue(staged_spec.ba_kwargs["pose_stage_configs"][2]["optimize_points"])
+        self.assertFalse(
+            staged_spec.ba_kwargs["pose_stage_configs"][0]["optimize_points"]
+        )
+        self.assertTrue(
+            staged_spec.ba_kwargs["pose_stage_configs"][1]["optimize_points"]
+        )
+        self.assertTrue(
+            staged_spec.ba_kwargs["pose_stage_configs"][2]["optimize_points"]
+        )
         self.assertEqual(intrinsics_first_spec.mode, "intrinsics_then_guarded")
-        self.assertFalse(intrinsics_first_spec.ba_kwargs["warmstart_optimize_extrinsics"])
+        self.assertFalse(
+            intrinsics_first_spec.ba_kwargs["warmstart_optimize_extrinsics"]
+        )
         self.assertFalse(intrinsics_first_spec.ba_kwargs["warmstart_optimize_points"])
+        self.assertNotIn(
+            "first_release_geometry_slack", intrinsics_first_spec.ba_kwargs
+        )
+        self.assertNotIn(
+            "first_release_correspondence_slack",
+            intrinsics_first_spec.ba_kwargs,
+        )
         self.assertEqual(
             intrinsics_first_spec.ba_kwargs["pose_release_camera_order"],
             [0, 1, 2, 3],
@@ -129,13 +143,31 @@ class TestBundleAdjustmentDemo(unittest.TestCase):
         self.assertEqual(alternating_spec.mode, "alternating")
         self.assertEqual(
             len(alternating_spec.ba_kwargs["pose_block_configs"]),
-            2,
-        )
-        self.assertFalse(
-            alternating_spec.ba_kwargs["pose_block_configs"][0]["optimize_points"]
+            6,
         )
         self.assertTrue(
-            alternating_spec.ba_kwargs["pose_block_configs"][1]["optimize_points"]
+            alternating_spec.ba_kwargs["pose_block_configs"][0]["optimize_points"]
+        )
+        self.assertEqual(
+            [
+                block["name"]
+                for block in alternating_spec.ba_kwargs["pose_block_configs"]
+            ],
+            [
+                "points_only",
+                "omega_only",
+                "phi_only",
+                "kappa_only",
+                "translation_only",
+                "joint_pose_points",
+            ],
+        )
+        self.assertEqual(
+            alternating_spec.ba_kwargs["first_release_geometry_slack"], 0.35
+        )
+        self.assertEqual(
+            alternating_spec.ba_kwargs["first_release_correspondence_slack"],
+            0.02,
         )
         self.assertIs(staged_known_spec.ba_kwargs["known_points"], known_points)
         self.assertEqual(staged_known_spec.ba_kwargs["known_point_sigmas"], 0.25)
@@ -195,11 +227,23 @@ class TestBundleAdjustmentDemo(unittest.TestCase):
         with (
             patch(
                 "openptv_python.demo_bundle_adjustment.multi_camera_bundle_adjustment",
-                return_value=(reference_cals, points.copy(), {"success": True, "final_reprojection_rms": 3.8, "message": "warm"}),
+                return_value=(
+                    reference_cals,
+                    points.copy(),
+                    {"success": True, "final_reprojection_rms": 3.8, "message": "warm"},
+                ),
             ) as warmstart,
             patch(
                 "openptv_python.demo_bundle_adjustment.guarded_two_step_bundle_adjustment",
-                return_value=(reference_cals, points.copy(), {"accepted_stage": "intrinsics", "final_reprojection_rms": 3.7, "final_mean_ray_convergence": 0.2}),
+                return_value=(
+                    reference_cals,
+                    points.copy(),
+                    {
+                        "accepted_stage": "intrinsics",
+                        "final_reprojection_rms": 3.7,
+                        "final_mean_ray_convergence": 0.2,
+                    },
+                ),
             ) as guarded,
         ):
             result = run_experiment(
@@ -224,6 +268,75 @@ class TestBundleAdjustmentDemo(unittest.TestCase):
         np.testing.assert_allclose(guarded.call_args.kwargs["point_init"], points)
         self.assertIn("warmstart_rms=3.800000", result.notes)
         self.assertIn("accepted_stage=intrinsics", result.notes)
+
+    def test_run_experiment_guarded_mode_does_not_forward_alternating_slack(self):
+        control = ControlPar(4).from_file(
+            Path("tests/testing_folder/control_parameters/control.par")
+        )
+        add_file = Path("tests/testing_folder/calibration/cam1.tif.addpar")
+        reference_cals = [
+            read_calibration(
+                Path(f"tests/testing_folder/calibration/sym_cam{cam_num}.tif.ori"),
+                add_file,
+            )
+            for cam_num in range(1, 5)
+        ]
+        start_cals = perturb_calibrations(reference_cals, 1.0)
+        points = np.array(
+            [
+                [-10.0, -10.0, 0.0],
+                [10.0, -10.0, 1.0],
+                [-10.0, 10.0, -1.0],
+                [10.0, 10.0, 0.5],
+            ],
+            dtype=float,
+        )
+        observed_pixels = np.empty((len(points), 4, 2), dtype=float)
+        for cam_num, cal in enumerate(reference_cals):
+            observed_pixels[:, cam_num, :] = arr_metric_to_pixel(
+                image_coordinates(points, cal, control.mm),
+                control,
+            )
+
+        spec = next(
+            experiment
+            for experiment in default_experiments(perturbation_scale=1.0)
+            if experiment.name == "guarded_stagewise_release"
+        )
+
+        with patch(
+            "openptv_python.demo_bundle_adjustment.guarded_two_step_bundle_adjustment",
+            return_value=(
+                reference_cals,
+                points.copy(),
+                {
+                    "accepted_stage": "intrinsics",
+                    "final_reprojection_rms": 3.7,
+                    "final_mean_ray_convergence": 0.2,
+                },
+            ),
+        ) as guarded:
+            run_experiment(
+                spec,
+                observed_pixels=observed_pixels,
+                point_init=points,
+                control=control,
+                start_cals=start_cals,
+                reference_cals=reference_cals,
+                reference_geometry_points=None,
+                tracking_data=None,
+                geometry_export_threshold=None,
+                correspondence_export_threshold=None,
+                source_case_dir=Path("tests/testing_folder"),
+                output_dir=None,
+            )
+
+        self.assertEqual(guarded.call_count, 1)
+        self.assertNotIn("first_release_geometry_slack", guarded.call_args.kwargs)
+        self.assertNotIn(
+            "first_release_correspondence_slack",
+            guarded.call_args.kwargs,
+        )
 
     def test_run_experiment_alternating_mode_uses_alternating_solver(self):
         control = ControlPar(4).from_file(
