@@ -3,11 +3,15 @@ from pathlib import Path
 
 import numpy as np
 
+from openptv_python._native_compat import HAS_OPTV
+from openptv_python._native_convert import to_native_calibration, to_native_control_par
 from openptv_python.calibration import (
     Calibration,
 )
+from openptv_python.constants import COORD_UNUSED
 from openptv_python.imgcoord import flat_image_coordinates, image_coordinates
 from openptv_python.orientation import (
+    point_position,
     match_detection_to_ref,
     point_positions,
     weighted_dumbbell_precision,
@@ -15,6 +19,28 @@ from openptv_python.orientation import (
 from openptv_python.parameters import ControlPar, MultimediaPar, OrientPar, VolumePar
 from openptv_python.tracking_frame_buf import Target
 from openptv_python.trafo import arr_metric_to_pixel
+
+try:
+    from optv.orientation import point_positions as native_point_positions
+    from optv.parameters import VolumeParams as NativeVolumeParams
+
+    HAS_NATIVE_RECONSTRUCTION = True
+except ImportError:
+    native_point_positions = None
+    NativeVolumeParams = None
+    HAS_NATIVE_RECONSTRUCTION = False
+
+
+def _python_multi_cam_point_positions_reference(targets, mm_par, cals):
+    """Reconstruct points with the original per-target Python loop."""
+    num_targets = targets.shape[0]
+    points = np.empty((num_targets, 3), dtype=np.float64)
+    rcm = np.empty(num_targets, dtype=np.float64)
+
+    for pt in range(num_targets):
+        rcm[pt], points[pt] = point_position(targets[pt], len(cals), mm_par, cals)
+
+    return points, rcm
 
 
 class TestOrientation(unittest.TestCase):
@@ -164,6 +190,119 @@ class TestOrientation(unittest.TestCase):
             )
         if np.any(np.linalg.norm(points - skew_dist_jigged[0], axis=1) > 0.1):
             self.fail("Rays converge on wrong position after jigging.")
+
+    def test_multi_camera_point_positions_matches_python_reference_loop(self):
+        """Compiled multi-camera reconstruction matches the original Python loop."""
+        mult_params = MultimediaPar()
+        mult_params.set_n1(1.0)
+        mult_params.set_layers([1.0], [1.0])
+        mult_params.set_n3(1.0)
+
+        points = np.array(
+            [
+                [17.0, 42.0, 0.0],
+                [12.5, 35.0, -4.0],
+                [-8.0, 50.0, 7.5],
+            ],
+            dtype=np.float64,
+        )
+
+        add_file = Path("tests/testing_folder/calibration/cam1.tif.addpar")
+        calibs = [
+            Calibration().from_file(
+                ori_file=Path(
+                    f"tests/testing_folder/calibration/sym_cam{cam_num}.tif.ori"
+                ),
+                add_file=add_file,
+            )
+            for cam_num in range(1, 5)
+        ]
+
+        projections = [image_coordinates(points, cal, mult_params) for cal in calibs]
+        targets = np.asarray(projections, dtype=np.float64).transpose(1, 0, 2)
+
+        partial_targets = targets.copy()
+        partial_targets[0, 3, :] = COORD_UNUSED
+        partial_targets[1, 1, :] = COORD_UNUSED
+        partial_targets[2, 0, :] = COORD_UNUSED
+        partial_targets[2, 2, :] = COORD_UNUSED
+
+        compiled_points, compiled_rcm = point_positions(
+            partial_targets,
+            mult_params,
+            calibs,
+            self.vpar,
+        )
+        reference_points, reference_rcm = _python_multi_cam_point_positions_reference(
+            partial_targets,
+            mult_params,
+            calibs,
+        )
+
+        np.testing.assert_allclose(compiled_points, reference_points, atol=1e-9)
+        np.testing.assert_allclose(compiled_rcm, reference_rcm, atol=1e-9)
+        np.testing.assert_allclose(compiled_points, points, atol=1e-6)
+
+    @unittest.skipUnless(
+        HAS_OPTV and HAS_NATIVE_RECONSTRUCTION,
+        "optv native point_positions is not available",
+    )
+    def test_multi_camera_point_positions_matches_native_backend(self):
+        """Compiled multi-camera reconstruction matches optv output."""
+        mult_params = MultimediaPar()
+        mult_params.set_n1(1.0)
+        mult_params.set_layers([1.0], [1.0])
+        mult_params.set_n3(1.0)
+
+        points = np.array(
+            [
+                [17.0, 42.0, 0.0],
+                [12.5, 35.0, -4.0],
+                [-8.0, 50.0, 7.5],
+            ],
+            dtype=np.float64,
+        )
+
+        cpar = ControlPar(4).from_file(self.control_file_name)
+        cpar.mm.set_n1(1.0)
+        cpar.mm.set_layers([1.0], [1.0])
+        cpar.mm.set_n3(1.0)
+
+        add_file = Path("tests/testing_folder/calibration/cam1.tif.addpar")
+        calibs = [
+            Calibration().from_file(
+                ori_file=Path(
+                    f"tests/testing_folder/calibration/sym_cam{cam_num}.tif.ori"
+                ),
+                add_file=add_file,
+            )
+            for cam_num in range(1, 5)
+        ]
+
+        projections = [image_coordinates(points, cal, cpar.mm) for cal in calibs]
+        targets = np.asarray(projections, dtype=np.float64).transpose(1, 0, 2)
+
+        python_points, python_rcm = point_positions(targets, cpar.mm, calibs, self.vpar)
+        reference_points, reference_rcm = _python_multi_cam_point_positions_reference(
+            targets,
+            cpar.mm,
+            calibs,
+        )
+
+        assert native_point_positions is not None
+        assert NativeVolumeParams is not None
+        native_points, native_rcm = native_point_positions(
+            targets,
+            to_native_control_par(cpar),
+            [to_native_calibration(cal) for cal in calibs],
+            NativeVolumeParams(),
+        )
+
+        np.testing.assert_allclose(python_points, reference_points, atol=1e-9)
+        np.testing.assert_allclose(python_rcm, reference_rcm, atol=1e-9)
+        np.testing.assert_allclose(native_points, python_points, atol=1e-9)
+        np.testing.assert_allclose(native_rcm, python_rcm, atol=1e-9)
+        np.testing.assert_allclose(python_points, points, atol=1e-6)
 
     def test_single_camera_point_positions(self):
         """Point positions for a single camera case."""

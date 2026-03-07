@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Sequence, Tuple, cast
 
 import numpy as np
 import scipy
-from numba import njit
+from numba import njit, prange
 
 from openptv_python.constants import COORD_UNUSED
 
@@ -15,7 +15,7 @@ from .imgcoord import image_coordinates, img_coord
 
 # from .lsqadj import ata, atl, matinv, matmul
 from .parameters import ControlPar, MultimediaPar, OrientPar, VolumePar
-from .ray_tracing import ray_tracing
+from .ray_tracing import fast_ray_tracing, ray_tracing
 from .sortgrid import sortgrid
 from .tracking_frame_buf import Target
 from .trafo import (
@@ -53,6 +53,79 @@ def skew_midpoint(
 
     res = (on1 + on2) * 0.5
     return float(scale), res
+
+
+@njit(cache=True, fastmath=True, nogil=True, parallel=True)
+def _multi_cam_point_positions_numba(
+    targets: np.ndarray,
+    distortion_matrices: np.ndarray,
+    primary_points: np.ndarray,
+    glass_vectors: np.ndarray,
+    ccs: np.ndarray,
+    distance_param: float,
+    refractive_index_medium1: float,
+    refractive_index_medium2: float,
+    refractive_index_medium3: float,
+    coord_unused: float,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Calculate multi-camera point positions using compiled per-point loops."""
+    num_targets = targets.shape[0]
+    num_cams = targets.shape[1]
+    res = np.empty((num_targets, 3), dtype=np.float64)
+    rcm = np.empty(num_targets, dtype=np.float64)
+
+    for pt in prange(num_targets):
+        vertices = np.zeros((num_cams, 3), dtype=np.float64)
+        directs = np.zeros((num_cams, 3), dtype=np.float64)
+        point_tot = np.zeros(3, dtype=np.float64)
+        num_used_pairs = 0
+        dtot = 0.0
+
+        for cam in range(num_cams):
+            if targets[pt, cam, 0] == coord_unused:
+                continue
+
+            camera = np.empty(3, dtype=np.float64)
+            camera[0] = targets[pt, cam, 0]
+            camera[1] = targets[pt, cam, 1]
+            camera[2] = -ccs[cam]
+            vertices[cam], directs[cam] = fast_ray_tracing(
+                camera,
+                distortion_matrices[cam],
+                primary_points[cam],
+                glass_vectors[cam],
+                distance_param,
+                refractive_index_medium1,
+                refractive_index_medium2,
+                refractive_index_medium3,
+            )
+
+        for cam in range(num_cams):
+            if targets[pt, cam, 0] == coord_unused:
+                continue
+
+            for pair in range(cam + 1, num_cams):
+                if targets[pt, pair, 0] == coord_unused:
+                    continue
+
+                num_used_pairs += 1
+                tmp, point = skew_midpoint(
+                    vertices[cam],
+                    directs[cam],
+                    vertices[pair],
+                    directs[pair],
+                )
+                dtot += tmp
+                point_tot += point
+
+        if num_used_pairs == 0:
+            rcm[pt] = np.nan
+            res[pt, :] = np.nan
+        else:
+            rcm[pt] = dtot / num_used_pairs
+            res[pt, :] = point_tot / num_used_pairs
+
+    return res, rcm
 
 
 def point_position(
@@ -1060,15 +1133,33 @@ def multi_cam_point_positions(
 
     # So we can address targets.data directly instead of get_ptr stuff:
 
-    num_targets = targets.shape[0]
-    num_cams = targets.shape[1]
-    res = np.empty((num_targets, 3))
-    rcm = np.empty(num_targets)
+    distortion_matrices = np.ascontiguousarray(
+        np.stack([cal.ext_par.dm for cal in cals]).astype(np.float64)
+    )
+    primary_points = np.ascontiguousarray(
+        np.stack(
+            [np.array([cal.ext_par.x0, cal.ext_par.y0, cal.ext_par.z0]) for cal in cals]
+        ).astype(np.float64)
+    )
+    glass_vectors = np.ascontiguousarray(
+        np.stack([cal.glass_par for cal in cals]).astype(np.float64)
+    )
+    ccs = np.ascontiguousarray(
+        np.array([cal.int_par.cc for cal in cals], dtype=np.float64)
+    )
 
-    for pt in range(num_targets):
-        rcm[pt], res[pt] = point_position(targets[pt], num_cams, mm_par, cals)
-
-    return res, rcm
+    return _multi_cam_point_positions_numba(
+        np.ascontiguousarray(targets, dtype=np.float64),
+        distortion_matrices,
+        primary_points,
+        glass_vectors,
+        ccs,
+        float(mm_par.d[0]),
+        float(mm_par.n1),
+        float(mm_par.n2[0]),
+        float(mm_par.n3),
+        float(COORD_UNUSED),
+    )
 
 
 def _clone_calibration(cal: Calibration) -> Calibration:
