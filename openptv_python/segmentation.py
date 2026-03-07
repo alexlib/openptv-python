@@ -5,6 +5,12 @@ import numpy as np
 from numba import njit
 from scipy.ndimage import center_of_mass, gaussian_filter, label, maximum_filter
 
+from ._native_compat import HAS_NATIVE_SEGMENTATION, native_target_recognition
+from ._native_convert import (
+    from_native_target_array,
+    to_native_control_par,
+    to_native_target_par,
+)
 from .constants import CORRES_NONE, MAX_TARGETS
 from .parameters import ControlPar, TargetPar
 from .tracking_frame_buf import Target
@@ -40,6 +46,29 @@ def targ_rec(
     num_cam,
 ) -> List[Target]:
     """Target recognition function."""
+    if (
+        HAS_NATIVE_SEGMENTATION
+        and xmin <= 0
+        and ymin <= 0
+        and xmax >= cpar.imx
+        and ymax >= cpar.imy
+    ):
+        native_tpar = to_native_target_par(targ_par)
+        native_cpar = to_native_control_par(cpar)
+        native_targets = native_target_recognition(
+            img,
+            native_tpar,
+            int(num_cam),
+            native_cpar,
+            subrange_x=None,
+            subrange_y=None,
+        )
+        targets = from_native_target_array(native_targets)
+        threshold = targ_par.gvthresh[int(num_cam)]
+        for target in targets:
+            target.sumg -= target.n * threshold
+        return targets
+
     thres = targ_par.gvthresh[num_cam]
     disco = targ_par.discont
 
