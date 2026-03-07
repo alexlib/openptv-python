@@ -45,11 +45,15 @@ from openptv_python.tracking_run import tr_new
 from openptv_python.trafo import dist_to_flat, metric_to_pixel, pixel_to_metric
 
 try:
+    from optv.orientation import (
+        multi_cam_point_positions as native_multi_cam_point_positions,
+    )
     from optv.orientation import point_positions as native_point_positions
     from optv.parameters import VolumeParams as NativeVolumeParams
 
     HAS_NATIVE_RECONSTRUCTION = True
 except ImportError:
+    native_multi_cam_point_positions = None
     native_point_positions = None
     NativeVolumeParams = None
     HAS_NATIVE_RECONSTRUCTION = False
@@ -189,6 +193,20 @@ def _build_reconstruction_stress_case(
         )
         for cam_num in range(1, 5)
     ]
+
+    projections = [image_coordinates(points, cal, cpar.mm) for cal in calibs]
+    targets = np.asarray(projections, dtype=np.float64).transpose(1, 0, 2)
+    return points, targets, cpar, calibs
+
+
+def _build_multilayer_reconstruction_stress_case(
+    num_points: int = 4096,
+) -> tuple[np.ndarray, np.ndarray, ControlPar, list[Calibration]]:
+    """Build a deterministic multi-layer multi-camera reconstruction workload."""
+    points, _targets, cpar, calibs = _build_reconstruction_stress_case(num_points)
+    cpar.mm.set_n1(1.0)
+    cpar.mm.set_layers([1.49, 1.10], [5.0, 10.0])
+    cpar.mm.set_n3(1.33)
 
     projections = [image_coordinates(points, cal, cpar.mm) for cal in calibs]
     targets = np.asarray(projections, dtype=np.float64).transpose(1, 0, 2)
@@ -685,7 +703,9 @@ class TestNativeStressPerformance(unittest.TestCase):
                 targets, native_cpar, native_cals, native_vpar
             )
 
-        compiled_python_result, compiled_python_timings = _benchmark(compiled_python_path)
+        compiled_python_result, compiled_python_timings = _benchmark(
+            compiled_python_path
+        )
         legacy_python_result, legacy_python_timings = _benchmark(legacy_python_path)
         native_result, native_timings = _benchmark(native_path)
         python_points, python_rcm = compiled_python_result
@@ -706,6 +726,55 @@ class TestNativeStressPerformance(unittest.TestCase):
         compiled_vs_native = median(compiled_python_timings) / median(native_timings)
         print(
             "reconstruction stress benchmark: "
+            f"{_timing_summary('compiled-python', compiled_python_timings)}; "
+            f"{_timing_summary('legacy-python', legacy_python_timings)}; "
+            f"{_timing_summary('native', native_timings)}; "
+            f"compiled-vs-legacy={compiled_vs_legacy:.2f}x; "
+            f"compiled-vs-native={compiled_vs_native:.2f}x"
+        )
+
+    @unittest.skipUnless(
+        HAS_OPTV and HAS_NATIVE_RECONSTRUCTION,
+        "optv native point_positions is not available",
+    )
+    def test_multilayer_point_reconstruction_stress_timing(self):
+        """Compare compiled Python, legacy Python, and native multilayer reconstruction."""
+        _expected_points, targets, cpar, calibs = (
+            _build_multilayer_reconstruction_stress_case()
+        )
+        native_cpar = to_native_control_par(cpar)
+        native_cals = [to_native_calibration(cal) for cal in calibs]
+
+        def compiled_python_path():
+            return orientation.multi_cam_point_positions(targets, cpar.mm, calibs)
+
+        def legacy_python_path():
+            return _python_point_positions_reference(targets, cpar.mm, calibs)
+
+        def native_path():
+            assert native_multi_cam_point_positions is not None
+            return native_multi_cam_point_positions(targets, native_cpar, native_cals)
+
+        compiled_python_result, compiled_python_timings = _benchmark(
+            compiled_python_path
+        )
+        legacy_python_result, legacy_python_timings = _benchmark(legacy_python_path)
+        native_result, native_timings = _benchmark(native_path)
+        python_points, python_rcm = compiled_python_result
+        legacy_points, legacy_rcm = legacy_python_result
+        native_points, native_rcm = native_result
+
+        np.testing.assert_allclose(legacy_points, python_points, atol=1e-9)
+        np.testing.assert_allclose(legacy_rcm, python_rcm, atol=1e-9)
+        np.testing.assert_allclose(native_points, python_points, atol=1e-9)
+        np.testing.assert_allclose(native_rcm, python_rcm, atol=1e-9)
+
+        compiled_vs_legacy = median(legacy_python_timings) / median(
+            compiled_python_timings
+        )
+        compiled_vs_native = median(compiled_python_timings) / median(native_timings)
+        print(
+            "multilayer reconstruction stress benchmark: "
             f"{_timing_summary('compiled-python', compiled_python_timings)}; "
             f"{_timing_summary('legacy-python', legacy_python_timings)}; "
             f"{_timing_summary('native', native_timings)}; "

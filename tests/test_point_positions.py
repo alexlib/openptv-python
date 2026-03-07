@@ -11,8 +11,8 @@ from openptv_python.calibration import (
 from openptv_python.constants import COORD_UNUSED
 from openptv_python.imgcoord import flat_image_coordinates, image_coordinates
 from openptv_python.orientation import (
-    point_position,
     match_detection_to_ref,
+    point_position,
     point_positions,
     weighted_dumbbell_precision,
 )

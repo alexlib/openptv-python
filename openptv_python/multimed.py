@@ -80,17 +80,18 @@ def fast_multimed_r_nlay(
         zdiff = 1.0
     it = 0
     rdiff = 0.1  # Initialize to enter the loop
+    beta2 = np.zeros(nlay, dtype=np.float64)
 
     while abs(rdiff) > 0.001 and it < n_iter:
         beta1 = np.arctan(rq / zdiff)
-        beta2 = np.arcsin(np.sin(beta1) * n1 / n2[0])
+        sin_beta1 = np.sin(beta1)
+        for layer in range(nlay):
+            beta2[layer] = np.arcsin(sin_beta1 * n1 / n2[layer])
         beta3 = np.arcsin(np.sin(beta1) * n1 / n3)
 
-        rbeta = (
-            (z0 - d[0]) * np.tan(beta1)
-            - zout * np.tan(beta3)
-            + np.sum(d * np.tan(beta2))
-        )
+        rbeta = (z0 - d[0]) * np.tan(beta1) - zout * np.tan(beta3)
+        for layer in range(nlay):
+            rbeta += d[layer] * np.tan(beta2[layer])
 
         rdiff = r - rbeta
         rq += rdiff
