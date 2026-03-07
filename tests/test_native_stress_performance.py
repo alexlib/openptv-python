@@ -94,7 +94,7 @@ def _env_flag_enabled(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
-RUN_STRESS_BENCHMARKS = _env_flag_enabled("OPENPTV_RUN_STRESS_BENCHMARKS")
+RUN_STRESS_BENCHMARKS = not _env_flag_enabled("OPENPTV_SKIP_STRESS_BENCHMARKS")
 
 
 def _benchmark(function, *, warmups: int = 1, runs: int = 3):
@@ -441,7 +441,7 @@ def _run_native_tracking_fixture() -> dict[str, tuple[int, str]]:
 
 @unittest.skipUnless(
     RUN_STRESS_BENCHMARKS,
-    "set OPENPTV_RUN_STRESS_BENCHMARKS=1 to run stress benchmarks",
+    "set OPENPTV_SKIP_STRESS_BENCHMARKS=1 to skip stress benchmarks",
 )
 class TestNativeStressPerformance(unittest.TestCase):
     """Stress tests comparing native and non-native runtime paths."""

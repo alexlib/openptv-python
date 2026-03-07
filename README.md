@@ -2,6 +2,23 @@
 
 Python version of the OpenPTV library - this is *a work in progress*
 
+## What This Repo Provides
+
+`openptv-python` keeps the Python API as the main interface and combines three
+execution modes behind that API:
+
+- Pure Python: the reference implementation and the easiest path for reading,
+  debugging, and extending the code.
+- Python + Numba: several hot kernels are JIT-compiled automatically on first
+  use, so the Python implementation still benefits from acceleration.
+- Native `optv` bindings: selected operations reuse the native OpenPTV
+  implementation when the `optv` package is available.
+
+At the moment, automatic native delegation is implemented for image
+preprocessing and full-frame target recognition. The rest of the library keeps
+the same Python API and remains usable even when those native paths are not in
+use.
+
 ## How this is started
 
 This work started from the https://github.com/OpenPTV/openptv/tree/pure_python branch. It's a long-standing idea to convert all the C code to Python and now it's possible with ChatGPT to save
@@ -10,11 +27,121 @@ a lot of typing time.
 This repo is created using a *cookiecutter* and the rest of the readme describes the way to work with
 this structure
 
-### Quick Start
+## Supported Python Versions
+
+The project currently supports Python `>=3.12,<3.14`.
+
+## Installation
+
+### Recommended: uv
+
+Create the environment and install all project dependencies:
+
+```bash
+uv venv
+source .venv/bin/activate
+uv sync
+```
+
+This is the simplest way to get the current default stack, including NumPy,
+SciPy, Numba, and the `optv` native bindings when they are available for your
+platform and Python version.
+
+### Alternative: conda + pip
+
+```bash
+conda create -n openptv-python -c conda-forge python=3.12
+conda activate openptv-python
+pip install -e .
+```
+
+### What gets installed
+
+- `numba` is part of the default dependency set and accelerates selected Python
+  kernels automatically after the first call.
+- `optv` is part of the default dependency set and enables native interop on
+  supported platforms.
+- The public API stays the same regardless of which backend is active.
+
+## Backend Behavior
+
+### Pure Python backend
+
+This is the base implementation for the whole library. It is always the source
+of truth for the Python API and remains the fallback behavior for code paths
+that are not delegated to `optv`.
+
+### Python + Numba backend
+
+Numba accelerates selected computational kernels inside the Python
+implementation. This is automatic; there is no separate API to enable it.
+Expect the first call to a JIT-compiled function to be slower due to
+compilation, with later calls running faster.
+
+### Native `optv` backend
+
+When `optv` imports successfully, `openptv-python` automatically reuses native
+implementations for:
+
+- image preprocessing
+- full-frame target recognition / segmentation
+
+These native paths are validated against the Python implementation by parity
+tests, so results stay backend-independent.
+
+### Backend Capability Table
+
+| Operation | Pure Python | Python + Numba | Native `optv` |
+| --- | --- | --- | --- |
+| Image preprocessing | Yes | Yes | Yes, automatic delegation |
+| Target recognition / segmentation | Yes | Yes | Yes, automatic delegation |
+| Point reconstruction | Yes | Partial internal kernels | Not used by default |
+| Correspondence search / stereo matching | Yes | Partial internal kernels | Not used by default |
+| Tracking | Yes | Partial internal kernels | Not used by default |
+| Sequence parameter I/O | Yes | No | Available in native bindings |
+
+`Not used by default` means the native path exists in benchmarks or conversion
+helpers, but the regular `openptv-python` runtime path still uses the Python
+implementation unless that operation is explicitly integrated later.
+
+## Getting Started
+
+### 1. Install the project
+
+Use one of the installation methods above.
+
+### 2. Verify imports
+
+```bash
+uv run python - <<'PY'
+import openptv_python
+import numba
+import optv
+
+print("openptv_python ok")
+print("numba ok", numba.__version__)
+print("optv ok", optv.__version__)
+PY
+```
+
+### 3. Start using the Python API
 
 ```python
 >>> import openptv_python
 
+```
+
+### 4. Run the test suite
+
+```bash
+uv run make
+```
+
+Stress and performance tests are part of the default suite now. If you need a
+faster validation pass locally, you can skip them explicitly:
+
+```bash
+OPENPTV_SKIP_STRESS_BENCHMARKS=1 uv run make
 ```
 
 ### Workflow for developers/contributors
