@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Iterable, List
 from types import ModuleType
+from typing import Iterable, List
 
 import numpy as np
 
