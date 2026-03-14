@@ -2,7 +2,7 @@ PROJECT := openptv_python
 CONDA := conda
 CONDAFLAGS :=
 COV_REPORT := html
-PYTHON ?= .venv/bin/python
+PYTHON ?= python
 
 default: qa unit-tests type-check
 
