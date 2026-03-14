@@ -33,9 +33,11 @@ The project currently supports Python `>=3.12,<3.14`.
 
 ## Installation
 
-### Recommended: uv
+### Default user install
 
-Create the environment and install all project dependencies:
+#### Recommended: uv
+
+Create the environment and install the runtime dependencies:
 
 ```bash
 uv venv
@@ -43,25 +45,57 @@ source .venv/bin/activate
 uv sync
 ```
 
-This is the simplest way to get the current default stack, including NumPy,
-SciPy, Numba, and the `optv` native bindings when they are available for your
-platform and Python version.
+This gives you the standard runtime stack: NumPy, SciPy, Numba, and YAML
+support.
 
-### Alternative: conda + pip
+If you also want native `optv` delegation when bindings are available for your
+platform and Python version, install the optional extra:
+
+```bash
+uv sync --extra native
+```
+
+#### Alternative: pip
 
 ```bash
 conda create -n openptv-python -c conda-forge python=3.12
 conda activate openptv-python
-pip install -e .
+pip install .
+```
+
+Optional native bindings:
+
+```bash
+pip install ".[native]"
+```
+
+### Developer install
+
+#### Recommended: uv
+
+```bash
+uv venv
+source .venv/bin/activate
+uv sync --extra dev
+```
+
+#### Alternative: conda + pip
+
+```bash
+conda create -n openptv-python -c conda-forge python=3.12
+conda activate openptv-python
+pip install -e ".[dev]"
 ```
 
 ### What gets installed
 
-- `numba` is part of the default dependency set and accelerates selected Python
-  kernels automatically after the first call.
-- `optv` is part of the default dependency set and enables native interop on
-  supported platforms.
-- The public API stays the same regardless of which backend is active.
+- The default install contains the runtime dependencies only.
+- The optional `native` extra adds `optv` bindings for automatic native
+  delegation on supported platforms.
+- The optional `dev` extra adds test, docs, typing, and pre-commit tooling for
+  contributors.
+- The public API stays the same regardless of which backend extras are
+  installed.
 
 ## Backend Behavior
 
@@ -116,11 +150,15 @@ Use one of the installation methods above.
 uv run python - <<'PY'
 import openptv_python
 import numba
-import optv
+try:
+  import optv
+except ImportError:
+  print("optv not installed; native delegation disabled")
+else:
+  print("optv ok", optv.__version__)
 
 print("openptv_python ok")
 print("numba ok", numba.__version__)
-print("optv ok", optv.__version__)
 PY
 ```
 
@@ -153,10 +191,11 @@ conda create -n openptv-python -c conda-forge python=3.12
 conda activate openptv-python
 ```
 
-Before pushing to GitHub, run the following commands:
+Before pushing to GitHub, use the developer install above and then run the
+following commands:
 
-1. Update conda environment: `make conda-env-update` or `uv venv` and `source .venv/bin/activate` followed by `uv sync --upgrade`
-1. Install this package: `pip install -e .`
+1. Update conda environment: `make conda-env-update` or `uv venv` and `source .venv/bin/activate` followed by `uv sync --extra dev --upgrade`
+1. If you are using pip instead of uv, install the editable developer environment: `pip install -e ".[dev]"`
 1. Sync with the latest [template](https://github.com/ecmwf-projects/cookiecutter-conda-package) (optional): `make template-update`
 1. Run quality assurance checks: `make qa`
 1. Run tests: `make unit-tests`
