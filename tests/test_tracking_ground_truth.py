@@ -1,3 +1,4 @@
+import io
 import os
 import re
 import shutil
@@ -5,7 +6,6 @@ import tempfile
 import unittest
 from contextlib import ExitStack, redirect_stdout
 from dataclasses import dataclass
-import io
 from pathlib import Path
 from unittest.mock import patch
 
@@ -18,7 +18,11 @@ from openptv_python.calibration import Calibration
 from openptv_python.constants import CORRES_NONE
 from openptv_python.imgcoord import image_coordinates
 from openptv_python.parameters import ControlPar, read_volume_par
-from openptv_python.track import track_forward_start, trackcorr_c_finish, trackcorr_c_loop
+from openptv_python.track import (
+    track_forward_start,
+    trackcorr_c_finish,
+    trackcorr_c_loop,
+)
 from openptv_python.tracking_frame_buf import (
     Frame,
     Pathinfo,
@@ -67,12 +71,30 @@ STRICT_BOUNDS = {
     "dvzmax": 0.005,
 }
 EXPECTED_PERMISSIVE_SNAPSHOT = {
-    10001: [(-1, 0, (2, 1, 1, -1), (0.0, 0.0, 0.0)), (-1, 1, (1, 0, 0, -1), (0.02, 0.01, 0.0))],
-    10002: [(0, 0, (2, 1, 1, -1), (0.01, 0.0, 0.0)), (1, 1, (1, 0, 0, -1), (0.03, 0.01, 0.0))],
-    10003: [(0, 0, (2, 1, 1, -1), (0.02, 0.0, 0.0)), (1, 1, (1, 0, 0, -1), (0.04, 0.01, 0.0))],
-    10004: [(0, 0, (2, 1, 1, -1), (0.03, 0.0, 0.0)), (1, 1, (1, 0, 0, -1), (0.05, 0.01, 0.0))],
-    10005: [(0, 0, (2, 1, 1, -1), (0.04, 0.0, 0.0)), (1, 1, (1, 0, 0, -1), (0.06, 0.01, 0.0))],
-    10006: [(0, -2, (2, 1, 1, -1), (0.05, 0.0, 0.0)), (1, -2, (1, 0, 0, -1), (0.07, 0.01, 0.0))],
+    10001: [
+        (-1, 0, (2, 1, 1, -1), (0.0, 0.0, 0.0)),
+        (-1, 1, (1, 0, 0, -1), (0.02, 0.01, 0.0)),
+    ],
+    10002: [
+        (0, 0, (2, 1, 1, -1), (0.01, 0.0, 0.0)),
+        (1, 1, (1, 0, 0, -1), (0.03, 0.01, 0.0)),
+    ],
+    10003: [
+        (0, 0, (2, 1, 1, -1), (0.02, 0.0, 0.0)),
+        (1, 1, (1, 0, 0, -1), (0.04, 0.01, 0.0)),
+    ],
+    10004: [
+        (0, 0, (2, 1, 1, -1), (0.03, 0.0, 0.0)),
+        (1, 1, (1, 0, 0, -1), (0.05, 0.01, 0.0)),
+    ],
+    10005: [
+        (0, 0, (2, 1, 1, -1), (0.04, 0.0, 0.0)),
+        (1, 1, (1, 0, 0, -1), (0.06, 0.01, 0.0)),
+    ],
+    10006: [
+        (0, -2, (2, 1, 1, -1), (0.05, 0.0, 0.0)),
+        (1, -2, (1, 0, 0, -1), (0.07, 0.01, 0.0)),
+    ],
 }
 EXPECTED_STRICT_SNAPSHOT = {
     frame: [
@@ -86,7 +108,10 @@ EXPECTED_STRICT_STEP_STATS = {frame: (0, 2) for frame in FRAMES[:-1]}
 BAD_FILE_LOOKUP_PATTERN = re.compile(r"Can't open ascii file|\d{10}_targets")
 
 CONSTANT_DIAGONAL_TRACKS = {
-    0: [np.array([0.01 * index, 0.01 * index, 0.01 * index]) for index in range(len(FRAMES))],
+    0: [
+        np.array([0.01 * index, 0.01 * index, 0.01 * index])
+        for index in range(len(FRAMES))
+    ],
 }
 TURNING_TRACKS = {
     0: [
@@ -139,7 +164,10 @@ BRANCH_SWITCH_TRACKS = {
 
 @dataclass(frozen=True)
 class TrackingSnapshotResult:
-    snapshot: dict[int, list[tuple[int, int, tuple[int, int, int, int], tuple[float, float, float]]]]
+    snapshot: dict[
+        int,
+        list[tuple[int, int, tuple[int, int, int, int], tuple[float, float, float]]],
+    ]
     log: str
     step_stats: dict[int, tuple[int, int]]
 
@@ -412,7 +440,9 @@ def _write_synthetic_tracking_fixture(
     return calibrations
 
 
-def _snapshot_tracking_outputs() -> dict[int, list[tuple[int, int, tuple[int, int, int, int], tuple[float, float, float]]]]:
+def _snapshot_tracking_outputs() -> dict[
+    int, list[tuple[int, int, tuple[int, int, int, int], tuple[float, float, float]]]
+]:
     """Read the written tracking outputs into a stable frame-by-frame snapshot."""
     snapshots = {}
     for frame in FRAMES:
@@ -611,7 +641,9 @@ class TestTrackingGroundTruth(unittest.TestCase):
     def test_tracking_exact_link_graph_matches_ground_truth_across_backends(self):
         """Match the exact permissive link graph across Python, Numba, and optv."""
         expected = EXPECTED_PERMISSIVE_SNAPSHOT
-        compiled_snapshot = _run_python_tracking_snapshot("python+numba", PERMISSIVE_BOUNDS)
+        compiled_snapshot = _run_python_tracking_snapshot(
+            "python+numba", PERMISSIVE_BOUNDS
+        )
         python_snapshot = _run_python_tracking_snapshot("python", PERMISSIVE_BOUNDS)
 
         self.assertEqual(compiled_snapshot.snapshot, expected)
@@ -641,7 +673,9 @@ class TestTrackingGroundTruth(unittest.TestCase):
         self.assertNotRegex(compiled_snapshot.log, BAD_FILE_LOOKUP_PATTERN)
         self.assertNotRegex(python_snapshot.log, BAD_FILE_LOOKUP_PATTERN)
 
-    def test_tracking_velocity_window_has_valid_range_between_reject_and_false_link(self):
+    def test_tracking_velocity_window_has_valid_range_between_reject_and_false_link(
+        self,
+    ):
         """A symmetric 3D velocity window must be wide enough for truth but narrow enough to block jumps."""
         self.assert_python_modes_match_graph(
             tracks=CONSTANT_DIAGONAL_TRACKS,

@@ -180,6 +180,17 @@ class TestAngleAcc(unittest.TestCase):
         )
         self.assertTrue(isclose(acc, 0.0, rel_tol=EPS), f"Expected 0.0 but found {acc}")
 
+        cand = np.array([2.0, 2.0, 2.0])
+
+        angle, acc = angle_acc(start, pred, cand)
+        self.assertTrue(
+            isclose(angle, 0.0, rel_tol=EPS), f"Expected 0.0 but found {angle}"
+        )
+        self.assertTrue(
+            isclose(acc, np.sqrt(3.0), rel_tol=EPS),
+            f"Expected {np.sqrt(3.0)} but found {acc}",
+        )
+
         cand = vec_scalar_mul(pred, -1)
 
         angle, acc = angle_acc(start, pred, cand)
