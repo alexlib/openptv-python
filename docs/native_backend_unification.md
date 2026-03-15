@@ -39,9 +39,19 @@ parity paths available:
 That split is exactly what we want for batch jobs:
 
 1. one Python script controls the workflow
-2. pure Python remains the guaranteed fallback path
-3. Numba accelerates selected kernels automatically
-4. `optv` can be used underneath the same API when installed
+1. pure Python remains the guaranteed fallback path
+1. Numba accelerates selected kernels automatically
+1. `optv` can be used underneath the same API when installed
+
+## Dispatch status by stage
+
+The current rollout state is easiest to read as a pipeline-status figure:
+
+![Backend rollout status](_static/native-backend-rollout-status.svg)
+
+The important distinction is not whether a native implementation exists. It is
+whether the normal `openptv_python` runtime path already chooses that native
+implementation transparently for the user.
 
 ## Why `tests/test_native_stress_performance.py` matters
 
@@ -51,8 +61,8 @@ The best executable description of this backend strategy is
 That test module does three useful things:
 
 1. it validates parity between Python and native paths for several stages
-2. it benchmarks Python, compiled Python, and native implementations side by side
-3. it demonstrates which stages already have a viable native provider behind the
+1. it benchmarks Python, compiled Python, and native implementations side by side
+1. it demonstrates which stages already have a viable native provider behind the
    same workflow semantics
 
 The benchmarked workloads in that file currently cover:
@@ -67,12 +77,27 @@ The benchmarked workloads in that file currently cover:
 
 ## Demo from this machine
 
-The figure below was generated from a real run on this machine on March 15,
-2026 using:
+The figure below was generated from a real run on this machine using the docs
+helper script:
+
+```bash
+/home/user/Documents/GitHub/openptv-python/.venv/bin/python docs/generate_native_stress_demo.py
+```
+
+That script reruns:
 
 ```bash
 /home/user/Documents/GitHub/openptv-python/.venv/bin/python -m pytest -q -s tests/test_native_stress_performance.py
 ```
+
+and then writes three machine-specific artifacts under `docs/_static/`:
+
+- `native-stress-demo.svg`
+- `native-stress-demo.json`
+- `native-stress-demo.log`
+
+Because it reruns the full stress suite, it is expected to take around a couple
+of minutes on a normal developer machine.
 
 The chart shows native speedup over the routed Python path used by the test:
 
@@ -109,11 +134,11 @@ internal execution paths.
 The test results support a practical backend policy:
 
 1. keep Python as the orchestration and scripting surface
-2. preserve current public function signatures so scripts and GUI code do not
+1. preserve current public function signatures so scripts and GUI code do not
    care which backend is active
-3. keep the pure Python implementation as the reference behavior
-4. continue using Numba for the medium-performance path
-5. route additional heavy stages to `optv` or future compiled kernels behind
+1. keep the pure Python implementation as the reference behavior
+1. continue using Numba for the medium-performance path
+1. route additional heavy stages to `optv` or future compiled kernels behind
    the same API
 
 In other words, users should be able to write one batch script and get:
