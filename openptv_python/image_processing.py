@@ -132,7 +132,7 @@ def fast_box_blur(
         col = imx - filt_span
         left = row_start + imx - n
         right = left + 1
-        while col < row_start + imx - row_start and m > 0 and right < row_start + imx:
+        while col < imx and m > 0 and right < row_start + imx:
             accum -= int(src_flat[left]) + int(src_flat[right])
             row_accum[row_start + col] = accum * n // m
             left += 2
