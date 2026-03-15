@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="620" viewBox="0 0 1100 620" role="img" aria-labelledby="title desc">
+  <title id="title">Unified openptv-python backend architecture</title>
+  <desc id="desc">Diagram showing a single Python API routing work to Python, Numba, or optv backends while keeping result types stable.</desc>
+  <rect width="1100" height="620" fill="#f7f3ea"/>
+  <rect x="40" y="36" width="1020" height="548" rx="24" fill="#fffdf8" stroke="#d8ccb4" stroke-width="2"/>
+
+  <text x="70" y="85" font-family="Helvetica, Arial, sans-serif" font-size="30" font-weight="700" fill="#1f2933">One user API, multiple execution paths</text>
+  <text x="70" y="115" font-family="Helvetica, Arial, sans-serif" font-size="18" fill="#44515c">User scripts and batch jobs call openptv_python once; backend routing stays internal.</text>
+
+  <rect x="70" y="155" width="240" height="120" rx="18" fill="#16324f"/>
+  <text x="92" y="195" font-family="Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#ffffff">User script / batch job</text>
+  <text x="92" y="226" font-family="Helvetica, Arial, sans-serif" font-size="17" fill="#d9e7f5">import openptv_python</text>
+  <text x="92" y="252" font-family="Helvetica, Arial, sans-serif" font-size="17" fill="#d9e7f5">run the same pipeline</text>
+
+  <rect x="390" y="145" width="330" height="150" rx="18" fill="#f0e0b6" stroke="#b18a2d" stroke-width="2"/>
+  <text x="414" y="182" font-family="Helvetica, Arial, sans-serif" font-size="24" font-weight="700" fill="#3b2f18">Public openptv_python API</text>
+  <text x="414" y="214" font-family="Helvetica, Arial, sans-serif" font-size="17" fill="#4d4024">preprocess_image()</text>
+  <text x="414" y="239" font-family="Helvetica, Arial, sans-serif" font-size="17" fill="#4d4024">targ_rec()</text>
+  <text x="414" y="264" font-family="Helvetica, Arial, sans-serif" font-size="17" fill="#4d4024">point_positions(), py_correspondences(), TrackingRun</text>
+
+  <rect x="790" y="145" width="240" height="150" rx="18" fill="#f7efe0" stroke="#c9ac72" stroke-width="2"/>
+  <text x="815" y="184" font-family="Helvetica, Arial, sans-serif" font-size="23" font-weight="700" fill="#47351b">Adapter layer</text>
+  <text x="815" y="214" font-family="Helvetica, Arial, sans-serif" font-size="17" fill="#5b4520">_native_compat.py</text>
+  <text x="815" y="239" font-family="Helvetica, Arial, sans-serif" font-size="17" fill="#5b4520">_native_convert.py</text>
+  <text x="815" y="264" font-family="Helvetica, Arial, sans-serif" font-size="17" fill="#5b4520">same Python signature</text>
+
+  <line x1="310" y1="215" x2="390" y2="215" stroke="#6b7280" stroke-width="4"/>
+  <polygon points="390,215 376,207 376,223" fill="#6b7280"/>
+  <line x1="720" y1="220" x2="790" y2="220" stroke="#6b7280" stroke-width="4"/>
+  <polygon points="790,220 776,212 776,228" fill="#6b7280"/>
+
+  <rect x="80" y="355" width="290" height="165" rx="18" fill="#d9ecff" stroke="#5a87b6" stroke-width="2"/>
+  <text x="104" y="394" font-family="Helvetica, Arial, sans-serif" font-size="24" font-weight="700" fill="#173b63">Pure Python</text>
+  <text x="104" y="425" font-family="Helvetica, Arial, sans-serif" font-size="17" fill="#284c73">Reference implementation</text>
+  <text x="104" y="450" font-family="Helvetica, Arial, sans-serif" font-size="17" fill="#284c73">Always available</text>
+  <text x="104" y="475" font-family="Helvetica, Arial, sans-serif" font-size="17" fill="#284c73">Guarantees batch execution</text>
+
+  <rect x="405" y="355" width="290" height="165" rx="18" fill="#dff3e4" stroke="#5d9d68" stroke-width="2"/>
+  <text x="429" y="394" font-family="Helvetica, Arial, sans-serif" font-size="24" font-weight="700" fill="#1f5127">Python + Numba</text>
+  <text x="429" y="425" font-family="Helvetica, Arial, sans-serif" font-size="17" fill="#2f6138">Accelerated kernels</text>
+  <text x="429" y="450" font-family="Helvetica, Arial, sans-serif" font-size="17" fill="#2f6138">No API change</text>
+  <text x="429" y="475" font-family="Helvetica, Arial, sans-serif" font-size="17" fill="#2f6138">Current medium-performance path</text>
+
+  <rect x="730" y="355" width="290" height="165" rx="18" fill="#fde4d8" stroke="#bc734f" stroke-width="2"/>
+  <text x="754" y="394" font-family="Helvetica, Arial, sans-serif" font-size="24" font-weight="700" fill="#7a3217">Native optv</text>
+  <text x="754" y="425" font-family="Helvetica, Arial, sans-serif" font-size="17" fill="#84462d">Optional dependency</text>
+  <text x="754" y="450" font-family="Helvetica, Arial, sans-serif" font-size="17" fill="#84462d">Already active for preprocessing</text>
+  <text x="754" y="475" font-family="Helvetica, Arial, sans-serif" font-size="17" fill="#84462d">and full-frame segmentation</text>
+
+  <line x1="900" y1="295" x2="225" y2="355" stroke="#7b8794" stroke-width="3"/>
+  <line x1="900" y1="295" x2="550" y2="355" stroke="#7b8794" stroke-width="3"/>
+  <line x1="900" y1="295" x2="875" y2="355" stroke="#7b8794" stroke-width="3"/>
+
+  <rect x="275" y="542" width="550" height="42" rx="12" fill="#efe8d9" stroke="#d0c2a0" stroke-width="1.5"/>
+  <text x="305" y="569" font-family="Helvetica, Arial, sans-serif" font-size="18" fill="#4b5563">Stable result objects and workflow semantics: the user should not need to care which backend ran.</text>
+</svg>

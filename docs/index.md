@@ -18,6 +18,7 @@ version is:
 
 README.md
 bundle_adjustment.md
+native_backend_unification.md
 ```
 
 # Indices and tables
