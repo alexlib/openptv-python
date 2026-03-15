@@ -99,13 +99,13 @@ The timings below were generated from a real run on this machine using the docs
 helper script:
 
 ```bash
-/home/user/Documents/GitHub/openptv-python/.venv/bin/python docs/generate_native_stress_demo.py
+python docs/generate_native_stress_demo.py
 ```
 
 That script reruns:
 
 ```bash
-/home/user/Documents/GitHub/openptv-python/.venv/bin/python -m pytest -q -s tests/test_native_stress_performance.py
+python -m pytest -q -s tests/test_native_stress_performance.py
 ```
 
 and then writes two machine-specific artifacts under `docs/_static/`:
