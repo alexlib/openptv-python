@@ -7,6 +7,7 @@ import unittest
 from contextlib import ExitStack, redirect_stdout
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 from unittest.mock import patch
 
 import numpy as np
@@ -186,7 +187,8 @@ def _make_bounds(*, dv_limit: float, dacc: float, dangle: float) -> dict[str, fl
 
 
 def _rounded_position(pos: np.ndarray) -> tuple[float, float, float]:
-    return tuple(round(float(value), 5) for value in pos)
+    values = tuple(round(float(value), 5) for value in pos)
+    return cast(tuple[float, float, float], values)
 
 
 def _snapshot_graph(snapshot):
@@ -359,7 +361,7 @@ def _write_synthetic_tracking_fixture(
 
     for frame_index, frame_num in enumerate(FRAMES):
         frame = Frame(3, 16)
-        cam_targets = [[] for _ in range(3)]
+        cam_targets: list[list[Target]] = [[] for _ in range(3)]
         correspond_indices = {
             track_id: [CORRES_NONE] * 4
             for track_id, positions in tracks.items()
@@ -427,7 +429,9 @@ def _write_synthetic_tracking_fixture(
                 correspond_indices[track_id],
                 dtype=np.int32,
             )
-            frame.path_info[row_index].x = tracks[track_id][frame_index]
+            position = tracks[track_id][frame_index]
+            assert position is not None
+            frame.path_info[row_index].x = position
 
         write_path_frame(
             frame.correspond,
@@ -446,7 +450,10 @@ def _snapshot_tracking_outputs() -> dict[
     int, list[tuple[int, int, tuple[int, int, int, int], tuple[float, float, float]]]
 ]:
     """Read the written tracking outputs into a stable frame-by-frame snapshot."""
-    snapshots = {}
+    snapshots: dict[
+        int,
+        list[tuple[int, int, tuple[int, int, int, int], tuple[float, float, float]]],
+    ] = {}
     for frame in FRAMES:
         correspond, path_info = read_path_frame(
             "res/particles",
@@ -458,8 +465,14 @@ def _snapshot_tracking_outputs() -> dict[
             (
                 int(path.prev_frame),
                 int(path.next_frame),
-                tuple(int(value) for value in correspond[idx].p),
-                tuple(round(float(value), 5) for value in path.x),
+                cast(
+                    tuple[int, int, int, int],
+                    tuple(int(value) for value in correspond[idx].p),
+                ),
+                cast(
+                    tuple[float, float, float],
+                    tuple(round(float(value), 5) for value in path.x),
+                ),
             )
             for idx, path in enumerate(path_info)
         ]

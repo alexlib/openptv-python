@@ -253,7 +253,7 @@ def angle_acc(start: np.ndarray, pred: np.ndarray, cand: np.ndarray) -> np.ndarr
     acc = np.linalg.norm(v0 - v1)
 
     if np.all(v0 == -v1):
-        angle = 200
+        angle = 200.0
     elif np.all(v0 == v1):
         angle = 0
     else:
