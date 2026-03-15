@@ -253,7 +253,7 @@ def angle_acc(start: np.ndarray, pred: np.ndarray, cand: np.ndarray) -> np.ndarr
     acc = np.linalg.norm(v0 - v1)
 
     if np.all(v0 == -v1):
-        angle = 200
+        angle = 200.0
     elif np.all(v0 == v1):
         angle = 0
     else:
@@ -261,9 +261,12 @@ def angle_acc(start: np.ndarray, pred: np.ndarray, cand: np.ndarray) -> np.ndarr
         norm_start_pred = np.linalg.norm(start - pred)
         norm_start_cand = np.linalg.norm(start - cand)
 
-        angle = (200.0 / np.pi) * np.arccos(
-            dot_product / (norm_start_pred * norm_start_cand)
-        )
+        if norm_start_pred == 0.0 or norm_start_cand == 0.0:
+            angle = 0.0
+        else:
+            cosine = dot_product / (norm_start_pred * norm_start_cand)
+            cosine = min(1.0, max(-1.0, cosine))
+            angle = (200.0 / np.pi) * np.arccos(cosine)
 
     return np.array([angle, acc])
 

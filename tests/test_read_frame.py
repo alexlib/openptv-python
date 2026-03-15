@@ -1,6 +1,9 @@
 """Test the Frame class."""
 
+import shutil
+import tempfile
 import unittest
+from pathlib import Path
 
 import numpy as np
 
@@ -61,6 +64,30 @@ class TestFrame(unittest.TestCase):
             ]
         )
         np.testing.assert_array_equal(targs, targs_correct)
+
+    def test_read_frame_returns_false_when_linkage_file_missing(self):
+        """Missing linkage data must fail the frame read instead of producing an empty frame."""
+        source_dir = Path("tests/testing_folder/frame")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            work_dir = Path(temp_dir)
+            for path in source_dir.iterdir():
+                shutil.copy2(path, work_dir / path.name)
+
+            (work_dir / "ptv_is.333").unlink()
+
+            targ_files = [str(work_dir / f"cam{c:d}.%04d") for c in range(1, 5)]
+            frm = Frame(num_cams=4)
+
+            self.assertFalse(
+                frm.read(
+                    corres_file_base=str(work_dir / "rt_is"),
+                    linkage_file_base=str(work_dir / "ptv_is"),
+                    prio_file_base=str(work_dir / "added"),
+                    target_file_base=targ_files,
+                    frame_num=333,
+                )
+            )
 
 
 if __name__ == "__main__":

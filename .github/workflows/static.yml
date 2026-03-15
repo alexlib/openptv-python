@@ -31,13 +31,23 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
+    - name: Setup Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.12'
+    - name: Install documentation dependencies
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install -e ".[docs]"
+    - name: Build documentation
+      run: |
+        make docs-build
     - name: Setup Pages
       uses: actions/configure-pages@v4
     - name: Upload artifact
       uses: actions/upload-pages-artifact@v3
       with:
-          # Upload entire repository
-        path: '.'
+        path: docs/_build/html
     - name: Deploy to GitHub Pages
       id: deployment
       uses: actions/deploy-pages@v4

@@ -341,6 +341,24 @@ class Frame:
         frame_num: int,
     ) -> bool:
         """Read a frame from the disk."""
+        required_files = [Path(f"{corres_file_base}.{frame_num}")]
+
+        if linkage_file_base != "":
+            required_files.append(Path(f"{linkage_file_base}.{frame_num}"))
+
+        if prio_file_base != "":
+            required_files.append(Path(f"{prio_file_base}.{frame_num}"))
+
+        for file_base in target_file_base:
+            if frame_num > 0:
+                required_files.append(Path(file_base % frame_num + "_targets"))
+            else:
+                required_files.append(Path(f"{file_base}_targets"))
+
+        for path in required_files:
+            if not path.exists():
+                return False
+
         cor_buf, path_buf = read_path_frame(
             # self.correspond, self.path_info = read_path_frame(
             corres_file_base,

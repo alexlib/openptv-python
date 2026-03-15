@@ -8,15 +8,32 @@ Created on Thu Aug 18 16:52:36 2016
 """
 
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
+import openptv_python.segmentation as segmentation
+from openptv_python._native_compat import HAS_NATIVE_SEGMENTATION
 from openptv_python.parameters import ControlPar, TargetPar
 from openptv_python.segmentation import target_recognition
 
 
 class TestTargRec(unittest.TestCase):
     """Test the target recognition algorithm."""
+
+    def assert_targets_match(self, native_targets, pure_targets):
+        """Compare target lists field by field to avoid backend coupling."""
+        self.assertEqual(len(native_targets), len(pure_targets))
+
+        for native_target, pure_target in zip(native_targets, pure_targets):
+            self.assertEqual(native_target.pnr, pure_target.pnr)
+            self.assertAlmostEqual(native_target.x, pure_target.x, places=9)
+            self.assertAlmostEqual(native_target.y, pure_target.y, places=9)
+            self.assertEqual(native_target.n, pure_target.n)
+            self.assertEqual(native_target.nx, pure_target.nx)
+            self.assertEqual(native_target.ny, pure_target.ny)
+            self.assertEqual(native_target.sumg, pure_target.sumg)
+            self.assertEqual(native_target.tnr, pure_target.tnr)
 
     def test_single_target(self):
         """Test a single target."""
@@ -121,6 +138,54 @@ class TestTargRec(unittest.TestCase):
 
         self.assertEqual(len(target_array), 1)
         self.assertEqual(target_array[0].count_pixels(), (4, 3, 2))
+
+    @unittest.skipUnless(
+        HAS_NATIVE_SEGMENTATION, "optv native target recognition is not available"
+    )
+    def test_target_recognition_matches_native_backend(self):
+        """Whole-image target detection should call native code and match Python."""
+        img = np.array(
+            [
+                [0, 0, 0, 0, 0, 0, 0],
+                [0, 240, 250, 245, 0, 0, 0],
+                [0, 242, 255, 244, 0, 0, 0],
+                [0, 0, 0, 0, 0, 253, 0],
+                [0, 0, 0, 0, 251, 255, 252],
+                [0, 0, 0, 0, 0, 250, 0],
+                [0, 0, 0, 0, 0, 0, 0],
+            ],
+            dtype=np.uint8,
+        )
+
+        cpar = ControlPar(1)
+        cpar.set_image_size((7, 7))
+        tpar = TargetPar(
+            gvthresh=[239],
+            discont=5,
+            nnmin=1,
+            nnmax=20,
+            sumg_min=1,
+            nxmin=1,
+            nxmax=10,
+            nymin=1,
+            nymax=10,
+        )
+
+        with patch.object(segmentation, "HAS_NATIVE_SEGMENTATION", False):
+            pure_targets = target_recognition(img, tpar, 0, cpar)
+
+        with patch.object(
+            segmentation,
+            "native_target_recognition",
+            wraps=segmentation.native_target_recognition,
+        ) as native_call:
+            native_targets = target_recognition(img, tpar, 0, cpar)
+
+        self.assertTrue(
+            native_call.called, "expected the native implementation to be called"
+        )
+
+        self.assert_targets_match(native_targets, pure_targets)
 
     # def test_peak_fit_new():
     #     """ Test the peak_fit function."""

@@ -105,7 +105,7 @@ class MultimediaPar(Parameters):
         else:
             self.n2 = refr_index
             self.d = thickness
-            # self.nlay = len(refr_index)
+            self.nlay = len(refr_index)
 
     def __str__(self) -> str:
         return f"nlay = {self.nlay}, n1 = {self.n1}, n2 = {self.n2}, d = {self.d}, n3 = {self.n3}"
