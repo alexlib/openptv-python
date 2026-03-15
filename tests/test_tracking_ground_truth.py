@@ -335,7 +335,9 @@ def _write_synthetic_tracking_fixture(
     add_distractor: bool = True,
 ) -> list[Calibration]:
     """Write a clean deterministic tracking fixture into a temporary workspace."""
-    source = Path("/home/user/Documents/GitHub/openptv-python/tests/testing_fodder")
+    source = Path(__file__).resolve().parent / "testing_fodder"
+    if not source.exists():
+        raise FileNotFoundError(f"Missing test fixture directory: {source}")
     shutil.copytree(source, workdir)
     os.chdir(workdir)
 
