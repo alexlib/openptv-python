@@ -4,6 +4,7 @@ version.py
 # Sphinx automatic generation of API
 docs/README.md
 docs/_api/
+docs/_generated/
 
 # Combined environments
 ci/combined-environment-*.yml

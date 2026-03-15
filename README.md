@@ -184,17 +184,28 @@ OPENPTV_SKIP_STRESS_BENCHMARKS=1 uv run make
 
 ### Workflow for developers/contributors
 
-For the best experience create a new conda environment (e.g. DEVELOP) with Python 3.12:
+Recommended contributor workflow with `uv`:
 
+```bash
+uv venv
+source .venv/bin/activate
+make env-update
 ```
+
+This keeps the local environment synced to the locked developer dependency set.
+
+If you prefer the conda workflow instead:
+
+```bash
 conda create -n openptv-python -c conda-forge python=3.12
 conda activate openptv-python
+make conda-env-update
 ```
 
 Before pushing to GitHub, use the developer install above and then run the
 following commands:
 
-1. Update conda environment: `make conda-env-update` or `uv venv` and `source .venv/bin/activate` followed by `uv sync --extra dev --upgrade`
+1. Update the environment: `make env-update` by default, or `make conda-env-update` if you are using the conda workflow
 1. If you are using pip instead of uv, install the editable developer environment: `pip install -e ".[dev]"`
 1. Sync with the latest [template](https://github.com/ecmwf-projects/cookiecutter-conda-package) (optional): `make template-update`
 1. Run quality assurance checks: `make qa`

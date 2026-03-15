@@ -10,7 +10,18 @@ The important user-facing contract is simple:
 - the same Python calls should work with and without `optv` installed
 - native acceleration is an implementation detail, not a second API surface
 
-![Unified API pipeline](_static/native-backend-unification.svg)
+The runtime flow is:
+
+| Layer | Responsibility |
+| --- | --- |
+| User script | Imports `openptv_python` and calls the normal Python API. |
+| Public API | Keeps the stable Python function signatures used by scripts and GUI code. |
+| Dispatch layer | Chooses between pure Python, Python plus Numba, or native `optv` based on availability and the specific operation. |
+| Backend implementation | Executes the selected kernel while preserving the same user-facing behavior. |
+
+In other words, the user writes one Python workflow and the repository decides
+internally whether the current operation should run through the fallback Python
+path, an accelerated Numba path, or a native `optv` path.
 
 ## How the API is unified today
 
@@ -45,9 +56,16 @@ That split is exactly what we want for batch jobs:
 
 ## Dispatch status by stage
 
-The current rollout state is easiest to read as a pipeline-status figure:
+The current rollout state is clearer as a status table:
 
-![Backend rollout status](_static/native-backend-rollout-status.svg)
+| Stage | Public entry point | Current status | Notes |
+| --- | --- | --- | --- |
+| Image preprocessing | `openptv_python.image_processing.preprocess_image()` | Auto-delegated today | Same Python signature; dispatches internally through native compatibility and conversion helpers when `optv` is available. |
+| Full-frame target recognition | `openptv_python.segmentation.targ_rec()` | Auto-delegated today | Whole-image path routes transparently to native and converts results back into Python `Target` objects. |
+| Point reconstruction | `openptv_python.orientation.point_positions()` and `multi_cam_point_positions()` | Parity-tested, not yet transparent | Native parity exists in the stress suite, but routine runtime dispatch still uses the Python implementation by default. |
+| Correspondences / stereo matching | `openptv_python.correspondences.py_correspondences()` | Parity-tested, not yet transparent | Benchmarked against `optv` correspondences, but not auto-routed yet. |
+| Tracking workflow | `openptv_python.tracking_run.TrackingRun` | Parity-tested, not yet transparent | Python workflow is compared with native `optv` `Tracker`, but dispatch remains separate today. |
+| Sequence parameter I/O | sequence parameter loading path | Parity-tested, not yet transparent | Native bindings exist and are benchmarked, but Python remains the default runtime entry point. |
 
 The important distinction is not whether a native implementation exists. It is
 whether the normal `openptv_python` runtime path already chooses that native
@@ -77,7 +95,7 @@ The benchmarked workloads in that file currently cover:
 
 ## Demo from this machine
 
-The figure below was generated from a real run on this machine using the docs
+The timings below were generated from a real run on this machine using the docs
 helper script:
 
 ```bash
@@ -90,40 +108,27 @@ That script reruns:
 /home/user/Documents/GitHub/openptv-python/.venv/bin/python -m pytest -q -s tests/test_native_stress_performance.py
 ```
 
-and then writes three machine-specific artifacts under `docs/_static/`:
+and then writes two machine-specific artifacts under `docs/_static/`:
 
-- `native-stress-demo.svg`
 - `native-stress-demo.json`
 - `native-stress-demo.log`
 
 Because it reruns the full stress suite, it is expected to take around a couple
 of minutes on a normal developer machine.
 
-The chart shows native speedup over the routed Python path used by the test:
+The reported speedups compare native execution against the routed Python path
+used by the test:
 
 - for preprocessing, segmentation, stereomatching, and tracking this is Python
   versus native
 - for reconstruction workloads this is compiled Python plus Numba versus native
 
-![Native stress benchmark demo](_static/native-stress-demo.svg)
+The parsed machine-specific results are summarized in the next section.
 
 ## Measured median timings
 
-| Workload | Python or routed Python path | Native path | Speedup shown in figure |
-| --- | ---: | ---: | ---: |
-| Sequence params | 0.000029 s | 0.000010 s | 2.78x |
-| Preprocess image | 2.263711 s | 0.004870 s | 464.80x |
-| Segmentation | 0.012110 s | 0.002967 s | 4.08x |
-| Stereo matching | 23.990435 s | 0.003137 s | 7646.98x |
-| Reconstruction | 0.012397 s | 0.006419 s | 1.93x |
-| Multilayer reconstruction | 0.015707 s | 0.006754 s | 2.33x |
-| Tracking | 2.247133 s | 0.336165 s | 6.68x |
-
-For the two reconstruction workloads, the same stress test also reported the
-benefit of the current compiled Python path over the older per-point Python loop:
-
-- reconstruction: compiled Python was 63.01x faster than legacy Python
-- multilayer reconstruction: compiled Python was 54.87x faster than legacy Python
+```{include} _generated/native-stress-demo.mdinc
+```
 
 This is the key architectural message of the page: the repository does not need
 two user APIs to get performance. It needs one stable Python API with multiple
