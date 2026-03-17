@@ -15,7 +15,14 @@ from .constants import (
 from .epi import epi_mm
 from .find_candidate import find_candidate
 from .parameters import ControlPar, VolumePar
-from .tracking_frame_buf import Frame, Target, n_tupel_dtype
+from .tracking_frame_buf import (
+    Frame,
+    Target,
+    get_by_pnrs as _get_by_pnrs,
+    match_coords as _match_coords,
+    matched_coords_as_arrays as _matched_coords_as_arrays,
+    n_tupel_dtype,
+)
 
 Correspond_dtype = np.dtype(
     [
@@ -26,6 +33,48 @@ Correspond_dtype = np.dtype(
         ("dist", (np.float64, MAXCAND)),  # np.zeros
     ]
 )
+
+
+class MatchedCoords:
+    """Compatibility wrapper for x-sorted matched 2D coordinates.
+
+    The legacy PyPTV GUI expects a class-like object with ``as_arrays()`` and
+    ``get_by_pnrs()`` methods. The core implementation uses a NumPy recarray,
+    so this wrapper keeps the public API stable while delegating the actual
+    work to :func:`tracking_frame_buf.match_coords`.
+    """
+
+    def __init__(
+        self,
+        targs: List[Target],
+        cpar: ControlPar,
+        cal: Calibration,
+        tol: float = 1e-5,
+        reset_numbers: bool = False,
+    ) -> None:
+        self._coords = _match_coords(targs, cpar, cal, tol=tol, reset_numbers=reset_numbers)
+
+    def as_arrays(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Return position and target-number arrays."""
+        return _matched_coords_as_arrays(self._coords)
+
+    def get_by_pnrs(self, pnrs: np.ndarray) -> np.ndarray:
+        """Return flat positions for the provided target numbers."""
+        return _get_by_pnrs(self._coords, pnrs)
+
+    @property
+    def coords(self) -> np.recarray:
+        """Expose the underlying recarray for low-level consumers."""
+        return self._coords
+
+    def __len__(self) -> int:
+        return len(self._coords)
+
+    def __iter__(self):
+        return iter(self._coords)
+
+    def __getitem__(self, item):
+        return self._coords[item]
 
 
 def safely_allocate_target_usage_marks(

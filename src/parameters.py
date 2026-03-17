@@ -503,6 +503,24 @@ class ControlPar(Parameters):
         """Return high pass flag."""
         return self.hp_flag
 
+    def set_allCam_flag(self, all_cam_flag):
+        """Set the all-camera flag using the legacy PyPTV name."""
+        self.all_cam_flag = all_cam_flag
+
+    def set_tiff_flag(self, tiff_flag):
+        """Set the TIFF flag."""
+        self.tiff_flag = tiff_flag
+
+    def set_cal_img_base_name(self, cam_index: int, base_name: str):
+        """Set the calibration image base name for one camera."""
+        while len(self.cal_img_base_name) <= cam_index:
+            self.cal_img_base_name.append("")
+        self.cal_img_base_name[cam_index] = base_name
+
+    def get_cal_img_base_name(self, cam_index: int = 0):
+        """Return the calibration image base name for one camera."""
+        return self.cal_img_base_name[cam_index]
+
     def get_allCam_flag(self):
         """Return allCam flag."""
         return self.all_cam_flag

@@ -13,6 +13,8 @@ execution modes behind that API:
   use, so the Python implementation still benefits from acceleration.
 - Native `optv` bindings: selected operations reuse the native OpenPTV
   implementation when the `optv` package is available.
+- PyPTV GUI: packaged in the same repository and installed as an optional
+  application package.
 
 At the moment, automatic native delegation is implemented for image
 preprocessing and full-frame target recognition. The rest of the library keeps
@@ -21,15 +23,11 @@ use.
 
 ## How this is started
 
-This work started from the https://github.com/OpenPTV/openptv/tree/pure_python branch. It's a long-standing idea to convert all the C code to Python and now it's possible with ChatGPT to save
-a lot of typing time.
-
-This repo is created using a *cookiecutter* and the rest of the readme describes the way to work with
-this structure
+This work started from the https://github.com/OpenPTV/openptv/tree/pure_python branch. It now serves as the single repository for the Python core library and the GUI layer.
 
 ## Supported Python Versions
 
-The project currently supports Python `>=3.12,<3.14`.
+The project currently supports Python `>=3.11,<3.14`.
 
 ## Installation
 
@@ -55,6 +53,12 @@ platform and Python version, install the optional extra:
 uv sync --extra native
 ```
 
+If you also want the GUI application, install the GUI extra:
+
+```bash
+uv sync --extra gui
+```
+
 #### Alternative: pip
 
 ```bash
@@ -67,6 +71,12 @@ Optional native bindings:
 
 ```bash
 pip install ".[native]"
+```
+
+Optional GUI application:
+
+```bash
+pip install ".[gui]"
 ```
 
 ### Developer install
@@ -92,8 +102,9 @@ pip install -e ".[dev]"
 - The default install contains the runtime dependencies only.
 - The optional `native` extra adds `optv` bindings for automatic native
   delegation on supported platforms.
-- The optional `dev` extra adds test, docs, typing, and pre-commit tooling for
-  contributors.
+- The optional `gui` extra adds the PyPTV GUI and its runtime dependencies.
+- The optional `dev` extra adds test, docs, typing, pre-commit, and GUI
+  tooling for contributors.
 - The public API stays the same regardless of which backend extras are
   installed.
 
