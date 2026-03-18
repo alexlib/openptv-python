@@ -721,7 +721,10 @@ def read_path_frame(
     */
 
     """
-    fname = f"{corres_file_base}.{frame_num}"
+    if frame_num > 0 and "%" in corres_file_base:
+        fname = corres_file_base % frame_num
+    else:
+        fname = f"{corres_file_base}.{frame_num}"
     # print(fname)
 
     try:
@@ -742,7 +745,10 @@ def read_path_frame(
     path_buf = [Pathinfo() for _ in range(n_particles)]
 
     if linkage_file_base != "":
-        fname = f"{linkage_file_base}.{frame_num}"
+        if frame_num > 0 and "%" in linkage_file_base:
+            fname = linkage_file_base % frame_num
+        else:
+            fname = f"{linkage_file_base}.{frame_num}"
         try:
             linkagein = open(fname, "r", encoding="utf-8")
         except IOError:
@@ -754,7 +760,10 @@ def read_path_frame(
         linkagein = None
 
     if prio_file_base != "":
-        fname = f"{prio_file_base}.{frame_num}"
+        if frame_num > 0 and "%" in prio_file_base:
+            fname = prio_file_base % frame_num
+        else:
+            fname = f"{prio_file_base}.{frame_num}"
         try:
             prioin = open(fname, "r", encoding="utf-8")
         except IOError:

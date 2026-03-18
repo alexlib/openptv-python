@@ -337,7 +337,7 @@ def _write_synthetic_tracking_fixture(
     add_distractor: bool = True,
 ) -> list[Calibration]:
     """Write a clean deterministic tracking fixture into a temporary workspace."""
-    source = Path(__file__).resolve().parent / "testing_folder"
+    source = Path(__file__).resolve().parents[1] / "testing_folder"
     if not source.exists():
         raise FileNotFoundError(f"Missing test fixture directory: {source}")
     shutil.copytree(source, workdir)

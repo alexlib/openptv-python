@@ -38,6 +38,8 @@ def _discover_calibration_pairs(folder: Path) -> Dict[str, tuple[Path, Path | No
 
     pairs: Dict[str, tuple[Path, Path | None]] = {}
     for ori_path in sorted(folder.glob("*.ori")):
+        if "(copy)" in ori_path.stem:
+            continue
         key = _camera_key_from_ori_path(ori_path)
         addpar_path = folder / f"{key}.addpar"
         pairs[key] = (ori_path, addpar_path if addpar_path.exists() else None)

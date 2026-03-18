@@ -36,9 +36,9 @@ class TestFrame(unittest.TestCase):
         targ_files = [f"tests/testing_folder/frame/cam{c:d}.%04d" for c in range(1, 5)]
         frm = Frame(num_cams=4)
         frm.read(
-            corres_file_base="tests/testing_folder/frame/rt_is",
-            linkage_file_base="tests/testing_folder/frame/ptv_is",
-            prio_file_base="tests/testing_folder/frame/added",
+            corres_file_base="tests/testing_folder/frame/rt_is.%d",
+            linkage_file_base="tests/testing_folder/frame/ptv_is.%d",
+            prio_file_base="tests/testing_folder/frame/added.%d",
             target_file_base=targ_files,
             frame_num=333,
         )
@@ -81,9 +81,9 @@ class TestFrame(unittest.TestCase):
 
             self.assertFalse(
                 frm.read(
-                    corres_file_base=str(work_dir / "rt_is"),
-                    linkage_file_base=str(work_dir / "ptv_is"),
-                    prio_file_base=str(work_dir / "added"),
+                    corres_file_base=str(work_dir / "rt_is.%d"),
+                    linkage_file_base=str(work_dir / "ptv_is.%d"),
+                    prio_file_base=str(work_dir / "added.%d"),
                     target_file_base=targ_files,
                     frame_num=333,
                 )
