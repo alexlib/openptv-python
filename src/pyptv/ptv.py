@@ -66,6 +66,10 @@ DEFAULT_NO_FILTER = 0
 SHORT_BASE = "cam"  # Use this as the short base for camera file naming
 
 
+def _as_text(value: str | bytes) -> str:
+    return value.decode() if isinstance(value, bytes) else value
+
+
 def _prepare_output_path(filename: str) -> Path:
     """Return a writable output path, creating parent directories when needed."""
     output_path = Path(filename)
@@ -503,7 +507,7 @@ def py_determination_proc_c(
         print_corresp = concatenated_corresp
 
     output_path = _prepare_output_path(
-        f"{default_naming['corres'].decode()}.{DEFAULT_FRAME_NUM}"
+        f"{_as_text(default_naming['corres'])}.{DEFAULT_FRAME_NUM}"
     )
 
     print(f"Prepared {output_path} to write positions")
@@ -683,14 +687,19 @@ def py_sequence_loop(exp) -> None:
         flat = np.array(
             [corr.get_by_pnrs(corresp) for corr, corresp in zip(corrected, sorted_corresp)]
         )
-        pos, _ = point_positions(flat.transpose(1, 0, 2), exp.cpar, exp.cals, exp.vpar)
+        pos, _ = point_positions(
+            flat.transpose(1, 0, 2),
+            exp.cpar.mm,
+            exp.cals,
+            exp.vpar,
+        )
         if len(exp.cals) < 4:
             print_corresp = -1 * np.ones((4, sorted_corresp.shape[1]))
             print_corresp[: len(exp.cals), :] = sorted_corresp
         else:
             print_corresp = sorted_corresp
 
-        output_path = _prepare_output_path(f"{default_naming['corres'].decode()}.{frame}")
+        output_path = _prepare_output_path(f"{_as_text(default_naming['corres'])}.{frame}")
         try:
             with open(output_path, "w", encoding="utf8") as rt_is:
                 rt_is.write(f"{pos.shape[0]}\n")
@@ -795,9 +804,20 @@ def write_targets(targets: TargetArray, short_file_base: str, frame: int) -> boo
         return True  # No targets to write, but file created successfully
 
     try:
+        def _value(field):
+            return field() if callable(field) else field
+
         target_arr = np.array(
             [
-                ([t.pnr(), *t.pos(), *t.count_pixels(), t.sum_grey_value(), t.tnr()])
+                (
+                    [
+                        _value(t.pnr),
+                        *t.pos(),
+                        *t.count_pixels(),
+                        t.sum_grey_value(),
+                        _value(t.tnr),
+                    ]
+                )
                 for t in targets
             ]
         )

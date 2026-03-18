@@ -1,11 +1,14 @@
 import os
+import tempfile
 import unittest
+from pathlib import Path
 
 import numpy as np
 
 from openptv_python.constants import POSI
 from openptv_python.tracking_frame_buf import (
     Corres_dtype,
+    Frame,
     Pathinfo,
     Target,
     compare_corres,
@@ -101,6 +104,37 @@ class TestWriteTargets(unittest.TestCase):
 
         # Clean up the test directory
         os.remove(file_base % frame_num + "_targets")
+
+
+class TestPlainBaseFrameIO(unittest.TestCase):
+    def test_frame_read_accepts_plain_short_bases(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            corres_base = tmp_path / "res" / "rt_is"
+            target_base = tmp_path / "img" / "cam1"
+
+            corres_base.parent.mkdir(parents=True, exist_ok=True)
+            target_base.parent.mkdir(parents=True, exist_ok=True)
+
+            frame_num = 42
+            (corres_base.parent / f"{corres_base.name}.0042").write_text("0\n", encoding="utf-8")
+            (target_base.parent / f"{target_base.name}.0042_targets").write_text(
+                "0\n",
+                encoding="utf-8",
+            )
+
+            frame = Frame(num_cams=1, max_targets=1)
+
+            result = frame.read(
+                str(corres_base),
+                "",
+                "",
+                [str(target_base)],
+                frame_num,
+            )
+
+            self.assertTrue(result)
+            self.assertEqual(frame.num_targets[0], 0)
 
 
 class TestReadPathFrame(unittest.TestCase):

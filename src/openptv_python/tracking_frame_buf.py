@@ -40,7 +40,6 @@ def quicksort_n_tupel(arr: np.recarray) -> np.recarray:
     -------
       A list of n_tupel instances, sorted by the corr attribute.
     """
-    # inline sorting
     arr.sort(order="corr")
     return arr
 
@@ -51,6 +50,16 @@ Corres_dtype = np.dtype(
         ("p", np.int32, (4,)),  # -1 for no correspondence
     ]
 )
+
+
+def _resolve_frame_base(file_base: str, frame_num: int, suffix: str = "") -> Path:
+    if frame_num > 0:
+        if "%" in file_base:
+            return Path(file_base % frame_num + suffix)
+        if file_base.endswith((".", "_", "-", "/")):
+            return Path(f"{file_base}{frame_num:04d}{suffix}")
+        return Path(f"{file_base}.{frame_num:04d}{suffix}")
+    return Path(f"{file_base}{suffix}")
 
 
 # def __eq__(self, other):
@@ -165,17 +174,7 @@ class TargetArray(list):
 def read_targets(file_base: str, frame_num: int) -> List[Target]:
     """Read targets from a file."""
     buffer = []
-
-    # # if file_base has an extension, remove it
-    # file_base = file_base.split(".")[0]
-
-    if frame_num > 0:
-        # filename = f"{file_base}{frame_num:04d}_targets"
-        fname = file_base % frame_num + "_targets"
-    else:
-        fname = f"{file_base}_targets"
-
-    filename = Path(fname)
+    filename = _resolve_frame_base(file_base, frame_num, "_targets")
     print(f" filename: {filename}")
 
     try:
@@ -214,17 +213,7 @@ def write_targets(
 ) -> bool:
     """Write targets to a file."""
     success = False
-
-    # fix old-type names, that are like cam1.# or just cam1.
-    if "#" in file_base:
-        file_base = file_base.replace("#", "%05d")
-    if "%" not in file_base:
-        file_base = file_base + "%05d"
-
-    if frame_num == 0:
-        frame_num = 123456789
-
-    file_name = file_base % frame_num + "_targets"
+    file_name = _resolve_frame_base(file_base, frame_num, "_targets")
 
     try:
         # Convert targets to a 2D numpy array
@@ -341,19 +330,16 @@ class Frame:
         frame_num: int,
     ) -> bool:
         """Read a frame from the disk."""
-        required_files = [Path(f"{corres_file_base}.{frame_num}")]
+        required_files = [_resolve_frame_base(corres_file_base, frame_num)]
 
         if linkage_file_base != "":
-            required_files.append(Path(f"{linkage_file_base}.{frame_num}"))
+            required_files.append(_resolve_frame_base(linkage_file_base, frame_num))
 
         if prio_file_base != "":
-            required_files.append(Path(f"{prio_file_base}.{frame_num}"))
+            required_files.append(_resolve_frame_base(prio_file_base, frame_num))
 
         for file_base in target_file_base:
-            if frame_num > 0:
-                required_files.append(Path(file_base % frame_num + "_targets"))
-            else:
-                required_files.append(Path(f"{file_base}_targets"))
+            required_files.append(_resolve_frame_base(file_base, frame_num, "_targets"))
 
         for path in required_files:
             if not path.exists():
