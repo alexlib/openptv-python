@@ -15,7 +15,7 @@ import os
 
 def test_pyptv_batch(test_data_dir):
     """Test batch processing with test cavity data using YAML parameters and validate output."""
-    test_dir = test_data_dir
+    test_dir = test_data_dir / "test_cavity"
     assert test_dir.exists(), f"Test directory {test_dir} not found"
 
     yaml_file = test_dir / "parameters_Run1.yaml"
@@ -48,7 +48,7 @@ def test_pyptv_batch(test_data_dir):
 
 def test_pyptv_batch_with_repetitions(test_data_dir):
     """Test batch processing with multiple repetitions"""
-    test_dir = test_data_dir
+    test_dir = test_data_dir / "test_cavity"
     yaml_file = test_dir / "parameters_Run1.yaml"
     
     # Test smaller frame range with repetitions
@@ -81,7 +81,7 @@ def test_pyptv_batch_validation_errors():
 
 def test_pyptv_batch_produces_results(test_data_dir):
     """Test that batch processing actually produces correspondence and tracking results"""
-    test_dir = test_data_dir
+    test_dir = test_data_dir / "test_cavity"
     yaml_file = test_dir / "parameters_Run1.yaml"
     
     # Test specific frame
@@ -119,7 +119,7 @@ def test_pyptv_batch_produces_results(test_data_dir):
 
 def test_pyptv_batch_tracking_results(test_data_dir):
     """Test that batch processing with multiple frames produces tracking results and validates output."""
-    test_dir = test_data_dir
+    test_dir = test_data_dir / "test_cavity"
     yaml_file = test_dir / "parameters_Run1.yaml"
     start_frame = 10000
     end_frame = 10004
@@ -141,7 +141,7 @@ def test_pyptv_batch_tracking_results(test_data_dir):
 
 def test_pyptv_batch_tracking_mode_only(test_data_dir):
     """Test batch processing with mode='tracking' only, with debug output"""
-    test_dir = test_data_dir
+    test_dir = test_data_dir / "test_cavity"
     yaml_file = test_dir / "parameters_Run1.yaml"
     start_frame = 10000
     end_frame = 10004
@@ -176,7 +176,7 @@ def test_pyptv_batch_tracking_mode_only_with_temp_yaml(test_data_dir):
     import tempfile
     import shutil
     import yaml
-    test_dir = test_data_dir
+    test_dir = test_data_dir / "test_cavity"
     orig_yaml = test_dir / "parameters_Run1.yaml"
     start_frame = 10000
     end_frame = 10004
@@ -184,26 +184,30 @@ def test_pyptv_batch_tracking_mode_only_with_temp_yaml(test_data_dir):
     if res_dir.exists():
         shutil.rmtree(res_dir)
     # Copy original YAML to temp file
-    with tempfile.NamedTemporaryFile('w', delete=False, suffix='.yaml', dir=test_dir) as tmp:
-        temp_yaml = tmp.name
-        with open(orig_yaml, 'r') as orig_f:
-            orig_content = yaml.safe_load(orig_f)
-        yaml.safe_dump(orig_content, tmp)
-    print(f"Running tracking mode with temp YAML: {temp_yaml}")
-    print(f"Frame range: {start_frame} to {end_frame}")
-    pyptv_batch.main(temp_yaml, start_frame, end_frame, mode="sequence")
-    # Extract and print tracking parameters
-    with open(temp_yaml, 'r') as f:
-        params = yaml.safe_load(f)
-    track_params = params.get('track', {})
-    print("Tracking parameters:")
-    for k, v in track_params.items():
-        print(f"  {k}: {v}")
+    temp_yaml = None
     try:
+        with tempfile.NamedTemporaryFile('w', delete=False, suffix='.yaml', dir=test_dir) as tmp:
+            temp_yaml = tmp.name
+            with open(orig_yaml, 'r') as orig_f:
+                orig_content = yaml.safe_load(orig_f)
+            yaml.safe_dump(orig_content, tmp)
+        print(f"Running tracking mode with temp YAML: {temp_yaml}")
+        print(f"Frame range: {start_frame} to {end_frame}")
+        pyptv_batch.main(temp_yaml, start_frame, end_frame, mode="sequence")
+        # Extract and print tracking parameters
+        with open(temp_yaml, 'r') as f:
+            params = yaml.safe_load(f)
+        track_params = params.get('track', {})
+        print("Tracking parameters:")
+        for k, v in track_params.items():
+            print(f"  {k}: {v}")
         pyptv_batch.main(temp_yaml, start_frame, end_frame, mode="tracking")
     except Exception as e:
         print(f"Tracking mode batch processing failed: {str(e)}")
         pytest.fail(f"Tracking mode batch processing failed: {str(e)}")
+    finally:
+        if temp_yaml is not None:
+            Path(temp_yaml).unlink(missing_ok=True)
     assert res_dir.exists(), "Results directory should be created in tracking mode"
     print(f"Tracking mode test completed for frames {start_frame} to {end_frame}")
     for frame in range(start_frame, end_frame+1):
@@ -222,104 +226,122 @@ def test_pyptv_batch_tracking_mode_only_with_temp_yaml_collect_results(test_data
     import yaml
     import re
     import subprocess
-    test_dir = test_data_dir
+    test_dir = test_data_dir / "test_cavity"
     orig_yaml = test_dir / "parameters_Run1.yaml"
     start_frame = 10000
     end_frame = 10004
     res_dir = test_dir / "res"
     if res_dir.exists():
         shutil.rmtree(res_dir)
-    # Copy original YAML to temp file
-    with tempfile.NamedTemporaryFile('w', delete=False, suffix='.yaml', dir=test_dir) as tmp:
-        temp_yaml = tmp.name
-        with open(orig_yaml, 'r') as orig_f:
-            orig_content = yaml.safe_load(orig_f)
-        yaml.safe_dump(orig_content, tmp)
-    # Extract tracking parameters
-    with open(temp_yaml, 'r') as f:
-        params = yaml.safe_load(f)
-    track_params = params.get('track', {})
-    # Run sequence mode (no need to capture output)
-    pyptv_batch.main(temp_yaml, start_frame, end_frame, mode="sequence")
-    # Run tracking mode and capture output to file, set cwd to test_dir
-    with tempfile.NamedTemporaryFile('w+', delete=False, suffix='.txt', dir=test_dir) as out_file:
-        out_path = out_file.name
-        cmd = [sys.executable, '-m', 'pyptv.pyptv_batch', os.path.basename(temp_yaml), str(start_frame), str(end_frame), '--mode', 'tracking']
-        try:
-            subprocess.run(cmd, stdout=out_file, stderr=subprocess.STDOUT, check=True, cwd=test_dir)
-        except subprocess.CalledProcessError:
-            out_file.flush()
-            with open(out_path, 'r') as f:
-                print("\n--- Subprocess output ---")
-                print(f.read())
-            raise
-    # Parse 'Average over sequence' line from file
-    avg_particles = avg_links = avg_lost = None
-    with open(out_path, 'r') as f:
-        for line in f:
-            m = re.search(r"Average over sequence, particles:\s*([\d\.-]+), links:\s*([\d\.-]+), lost:\s*([\d\.-]+)", line)
-            if m:
-                avg_particles = float(m.group(1))
-                avg_links = float(m.group(2))
-                avg_lost = float(m.group(3))
-                break
-    # Create DataFrame to collect results
-    results = []
-    # Store original run
-    row = {**track_params, 'avg_particles': avg_particles, 'avg_links': avg_links, 'avg_lost': avg_lost, 'param_changed': None, 'change': 0.0}
-    results.append(row)
+    temp_yaml = None
+    out_path = None
+    summary_path = test_dir / "tracking_run_summary.csv"
+    try:
+        # Copy original YAML to temp file
+        with tempfile.NamedTemporaryFile('w', delete=False, suffix='.yaml', dir=test_dir) as tmp:
+            temp_yaml = tmp.name
+            with open(orig_yaml, 'r') as orig_f:
+                orig_content = yaml.safe_load(orig_f)
+            yaml.safe_dump(orig_content, tmp)
+        # Extract tracking parameters
+        with open(temp_yaml, 'r') as f:
+            params = yaml.safe_load(f)
+        track_params = params.get('track', {})
+        # Run sequence mode (no need to capture output)
+        pyptv_batch.main(temp_yaml, start_frame, end_frame, mode="sequence")
+        # Run tracking mode and capture output to file, set cwd to test_dir
+        with tempfile.NamedTemporaryFile('w+', delete=False, suffix='.txt', dir=test_dir) as out_file:
+            out_path = out_file.name
+            cmd = [sys.executable, '-m', 'pyptv.pyptv_batch', os.path.basename(temp_yaml), str(start_frame), str(end_frame), '--mode', 'tracking']
+            try:
+                subprocess.run(cmd, stdout=out_file, stderr=subprocess.STDOUT, check=True, cwd=test_dir)
+            except subprocess.CalledProcessError:
+                out_file.flush()
+                with open(out_path, 'r') as f:
+                    print("\n--- Subprocess output ---")
+                    print(f.read())
+                raise
+        # Parse 'Average over sequence' line from file
+        avg_particles = avg_links = avg_lost = None
+        with open(out_path, 'r') as f:
+            for line in f:
+                m = re.search(r"Average over sequence, particles:\s*([\d\.-]+), links:\s*([\d\.-]+), lost:\s*([\d\.-]+)", line)
+                if m:
+                    avg_particles = float(m.group(1))
+                    avg_links = float(m.group(2))
+                    avg_lost = float(m.group(3))
+                    break
+        # Create DataFrame to collect results
+        results = []
+        # Store original run
+        row = {**track_params, 'avg_particles': avg_particles, 'avg_links': avg_links, 'avg_lost': avg_lost, 'param_changed': None, 'change': 0.0}
+        results.append(row)
 
-    # Loop: for each numeric track_param, perturb by +10% and rerun tracking
-    for param, value in track_params.items():
-        if isinstance(value, (int, float)):
-            # Create new temp YAML with perturbed parameter
-            with tempfile.NamedTemporaryFile('w', delete=False, suffix='.yaml', dir=test_dir) as tmp2:
-                temp_yaml2 = tmp2.name
-                with open(orig_yaml, 'r') as orig_f:
-                    orig_content2 = yaml.safe_load(orig_f)
-                # Update the parameter by +10%
-                new_val = value * 1.1
-                orig_content2['track'][param] = type(value)(new_val)
-                yaml.safe_dump(orig_content2, tmp2)
-            # Run sequence mode (to prep files)
-            pyptv_batch.main(temp_yaml2, start_frame, end_frame, mode="sequence")
-            # Run tracking mode and capture output
-            with tempfile.NamedTemporaryFile('w+', delete=False, suffix='.txt', dir=test_dir) as out_file2:
-                out_path2 = out_file2.name
-                cmd2 = [sys.executable, '-m', 'pyptv.pyptv_batch', os.path.basename(temp_yaml2), str(start_frame), str(end_frame), '--mode', 'tracking']
+        # Loop: for each numeric track_param, perturb by +10% and rerun tracking
+        for param, value in track_params.items():
+            if isinstance(value, (int, float)):
+                temp_yaml2 = None
+                out_path2 = None
+                # Create new temp YAML with perturbed parameter
+                with tempfile.NamedTemporaryFile('w', delete=False, suffix='.yaml', dir=test_dir) as tmp2:
+                    temp_yaml2 = tmp2.name
+                    with open(orig_yaml, 'r') as orig_f:
+                        orig_content2 = yaml.safe_load(orig_f)
+                    # Update the parameter by +10%
+                    new_val = value * 1.1
+                    orig_content2['track'][param] = type(value)(new_val)
+                    yaml.safe_dump(orig_content2, tmp2)
                 try:
-                    subprocess.run(cmd2, stdout=out_file2, stderr=subprocess.STDOUT, check=True, cwd=test_dir)
-                except subprocess.CalledProcessError:
-                    out_file2.flush()
+                    # Run sequence mode (to prep files)
+                    pyptv_batch.main(temp_yaml2, start_frame, end_frame, mode="sequence")
+                    # Run tracking mode and capture output
+                    with tempfile.NamedTemporaryFile('w+', delete=False, suffix='.txt', dir=test_dir) as out_file2:
+                        out_path2 = out_file2.name
+                        cmd2 = [sys.executable, '-m', 'pyptv.pyptv_batch', os.path.basename(temp_yaml2), str(start_frame), str(end_frame), '--mode', 'tracking']
+                        try:
+                            subprocess.run(cmd2, stdout=out_file2, stderr=subprocess.STDOUT, check=True, cwd=test_dir)
+                        except subprocess.CalledProcessError:
+                            out_file2.flush()
+                            with open(out_path2, 'r') as f:
+                                print(f"\n--- Subprocess output for {param} +10% ---")
+                                print(f.read())
+                            continue  # Skip this run if it failed
+                    # Parse output
+                    avg_particles2 = avg_links2 = avg_lost2 = None
                     with open(out_path2, 'r') as f:
-                        print(f"\n--- Subprocess output for {param} +10% ---")
-                        print(f.read())
-                    continue  # Skip this run if it failed
-            # Parse output
-            avg_particles2 = avg_links2 = avg_lost2 = None
-            with open(out_path2, 'r') as f:
-                for line in f:
-                    m = re.search(r"Average over sequence, particles:\s*([\d\.-]+), links:\s*([\d\.-]+), lost:\s*([\d\.-]+)", line)
-                    if m:
-                        avg_particles2 = float(m.group(1))
-                        avg_links2 = float(m.group(2))
-                        avg_lost2 = float(m.group(3))
-                        break
-            # Store result
-            perturbed_params = dict(track_params)
-            perturbed_params[param] = type(value)(new_val)
-            row2 = {**perturbed_params, 'avg_particles': avg_particles2, 'avg_links': avg_links2, 'avg_lost': avg_lost2, 'param_changed': param, 'change': 0.1}
-            results.append(row2)
+                        for line in f:
+                            m = re.search(r"Average over sequence, particles:\s*([\d\.-]+), links:\s*([\d\.-]+), lost:\s*([\d\.-]+)", line)
+                            if m:
+                                avg_particles2 = float(m.group(1))
+                                avg_links2 = float(m.group(2))
+                                avg_lost2 = float(m.group(3))
+                                break
+                    # Store result
+                    perturbed_params = dict(track_params)
+                    perturbed_params[param] = type(value)(new_val)
+                    row2 = {**perturbed_params, 'avg_particles': avg_particles2, 'avg_links': avg_links2, 'avg_lost': avg_lost2, 'param_changed': param, 'change': 0.1}
+                    results.append(row2)
+                finally:
+                    if temp_yaml2 is not None:
+                        Path(temp_yaml2).unlink(missing_ok=True)
+                    if out_path2 is not None:
+                        Path(out_path2).unlink(missing_ok=True)
 
-    df = pd.DataFrame(results)
-    print("\nTracking run summary (including perturbations):")
-    print(df)
-    df.to_csv(test_dir / "tracking_run_summary.csv", index=False)
+        df = pd.DataFrame(results)
+        print("\nTracking run summary (including perturbations):")
+        print(df)
+        df.to_csv(summary_path, index=False)
 
-    # Find best row: least avg_lost, then most avg_links
-    best = df.sort_values(['avg_lost', 'avg_links'], ascending=[True, False]).iloc[0]
-    print("\nBest tracking result (least lost, most links):")
-    print(best)
+        # Find best row: least avg_lost, then most avg_links
+        best = df.sort_values(['avg_lost', 'avg_links'], ascending=[True, False]).iloc[0]
+        print("\nBest tracking result (least lost, most links):")
+        print(best)
+    finally:
+        if temp_yaml is not None:
+            Path(temp_yaml).unlink(missing_ok=True)
+        if out_path is not None:
+            Path(out_path).unlink(missing_ok=True)
+        summary_path.unlink(missing_ok=True)
 
 
 def optimize_tracking_parameters(test_data_dir):
@@ -332,7 +354,7 @@ def optimize_tracking_parameters(test_data_dir):
     import numpy as np
     from scipy.optimize import minimize
 
-    test_dir = test_data_dir
+    test_dir = test_data_dir / "test_cavity"
     orig_yaml = test_dir / "parameters_Run1.yaml"
     start_frame = 10000
     end_frame = 10004  # Use only 2 frames for speed
