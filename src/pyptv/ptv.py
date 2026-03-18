@@ -20,26 +20,25 @@ from imageio.v3 import imread
 from skimage.util import img_as_ubyte
 from skimage.color import rgb2gray
 
-# Backend imports (supports both optv and openptv-python)
-from pyptv._backend import (
-    Calibration,
-    ControlParams,
-    SequenceParams,
-    TrackingParams,
-    TargetParams,
-    VolumeParams,
-    Frame,
-    MatchedCoords,
-    preprocess_image,
+from openptv_python.calibration import Calibration
+from openptv_python.correspondences import MatchedCoords, py_correspondences
+from openptv_python.imgcoord import image_coordinates
+from openptv_python.image_processing import preprocess_image
+from openptv_python.orientation import (
+    multi_cam_point_positions,
     point_positions,
-    target_recognition,
-    TargetArray,
-    Tracker,
-    default_naming,
-    convert_arr_pixel_to_metric,
 )
-from openptv_python.tracking_frame_buf import sort_target_y
-from openptv_python.correspondences import py_correspondences
+from openptv_python.parameters import (
+    ControlPar as ControlParams,
+    SequencePar as SequenceParams,
+    TargetPar as TargetParams,
+    TrackPar as TrackingParams,
+    VolumePar as VolumeParams,
+)
+from openptv_python.trafo import arr_pixel_to_metric as convert_arr_pixel_to_metric
+from openptv_python.segmentation import target_recognition
+from openptv_python.track import Tracker, default_naming
+from openptv_python.tracking_frame_buf import Frame, TargetArray, sort_target_y
 
 """
 example from Tracker documentation: 
@@ -56,7 +55,7 @@ example from Tracker documentation:
 """
 
 # PyPTV imports
-from pyptv.parameter_manager import ParameterManager
+from .parameter_manager import ParameterManager
 
 # Constants
 NAMES = ["cc", "xh", "yh", "k1", "k2", "k3", "p1", "p2", "scale", "shear"]
@@ -411,6 +410,11 @@ def py_pre_processing_c(
     return processed_images
 
 
+def correspondences(*args, **kwargs):
+    """Compatibility wrapper for legacy monkeypatches in PyPTV tests."""
+    return py_correspondences(*args, **kwargs)
+
+
 def py_detection_proc_c(
     num_cams: int,
     list_of_images: List[np.ndarray],
@@ -457,7 +461,7 @@ def py_detection_proc_c(
 def py_correspondences_proc_c(exp, frame=DEFAULT_FRAME_NUM):
     """Provides correspondences
     """
-    sorted_pos, sorted_corresp, num_targs = py_correspondences(
+    sorted_pos, sorted_corresp, num_targs = correspondences(
         exp.detections,
         exp.corrected,
         exp.cals,
@@ -1012,7 +1016,7 @@ def full_scipy_calibration(
     cal: Calibration, XYZ: np.ndarray, targs: TargetArray, cpar: ControlParams, flags=[]
 ):
     """Full calibration using scipy.optimize"""
-    from pyptv._backend import convert_arr_metric_to_pixel, image_coordinates
+    from openptv_python.trafo import arr_metric_to_pixel as convert_arr_metric_to_pixel
 
     def _residuals_k(x, cal, XYZ, xy, cpar):
         cal.set_radial_distortion(x)
@@ -1142,7 +1146,7 @@ def dumbbell_target_func(targets, cpar, calibs, db_length, db_weight):
     float
         The weighted ray convergence + length error measure.
     """
-    from pyptv._backend import multi_cam_point_positions
+    from openptv_python.orientation import multi_cam_point_positions
 
     num_cams = cpar.get_num_cams()
     num_targs = targets.shape[1]
@@ -1198,7 +1202,7 @@ def dumbbell_target_func(targets, cpar, calibs, db_length, db_weight):
 
 def dumbbell_target_residuals(targets, cpar, calibs, db_length, db_weight):
     """Return residuals per target pair for least-squares optimization."""
-    from pyptv._backend import multi_cam_point_positions
+    from openptv_python.orientation import multi_cam_point_positions
 
     num_targs = targets.shape[1]
     if num_targs % 2 != 0:
@@ -1238,7 +1242,7 @@ def dumbbell_ba_residuals(
     calib_vec packs active camera extrinsics and per-frame 3D endpoints.
     targets is shaped (num_cams, num_frames, 2, 2) in metric coordinates.
     """
-    from pyptv._backend import image_coordinates
+    from openptv_python.imgcoord import image_coordinates
 
     if db_length <= 0:
         raise ValueError("Dumbbell length must be positive")
@@ -1469,7 +1473,7 @@ def calib_dumbbell(cal_gui)-> None:
     metric_by_cam = np.array(metric_by_cam)
 
     if db_eps > 0:
-        from pyptv._backend import multi_cam_point_positions
+        from openptv_python.orientation import multi_cam_point_positions
 
         keep_mask = np.ones(num_frames, dtype=bool)
         removed = 0
@@ -1493,8 +1497,8 @@ def calib_dumbbell(cal_gui)-> None:
             raise ValueError("All frames filtered by dumbbell length eps")
 
     def _print_camera_residuals(label: str, metric_targets: np.ndarray) -> None:
-        from pyptv._backend import multi_cam_point_positions
-        from pyptv._backend import image_coordinates
+        from openptv_python.orientation import multi_cam_point_positions
+        from openptv_python.imgcoord import image_coordinates
 
         num_cams_local, num_frames_local, num_targs_local, _ = metric_targets.shape
         sums = np.zeros(num_cams_local, dtype=float)
@@ -1558,7 +1562,7 @@ def calib_dumbbell(cal_gui)-> None:
     calib_vec = calib_vec.flatten()
 
     def _init_dumbbell_points(metric_targets: np.ndarray) -> np.ndarray:
-        from pyptv._backend import multi_cam_point_positions
+        from openptv_python.orientation import multi_cam_point_positions
 
         num_cams_local, num_frames_local, _, _ = metric_targets.shape
         points = np.zeros((num_frames_local, 2, 3), dtype=float)
@@ -1679,7 +1683,7 @@ def calib_dumbbell(cal_gui)-> None:
 def calib_particles(exp):
     """Calibration with particles."""
 
-    from pyptv._backend import Frame
+    from openptv_python.tracking_frame_buf import Frame
     
     # Handle both Experiment objects and MainGUI objects
     if hasattr(exp, 'pm'):
@@ -1777,7 +1781,7 @@ def calib_particles(exp):
 
 def clone_calibration(calibration_obj):
     """Return a copy of a Calibration object using all get/set methods."""
-    from pyptv._backend import Calibration
+    from openptv_python.calibration import Calibration
     import numpy as np
     new_cal = Calibration()
     new_cal.set_pos(np.array(calibration_obj.get_pos()))

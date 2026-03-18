@@ -16,14 +16,12 @@ from pathlib import Path
 
 import numpy as np
 
-from pyptv._backend import (
-    Calibration,
-    convert_arr_metric_to_pixel,
-    image_coordinates,
-)
+from openptv_python.calibration import Calibration
+from openptv_python.imgcoord import image_coordinates
+from openptv_python.trafo import arr_metric_to_pixel as convert_arr_metric_to_pixel
 
-from pyptv.parameter_manager import ParameterManager
-from pyptv import ptv
+from .parameter_manager import ParameterManager
+from . import ptv
 
 
 @dataclass(frozen=True)

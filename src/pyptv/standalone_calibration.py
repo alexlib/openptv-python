@@ -11,10 +11,12 @@ from typing import Sequence
 
 import numpy as np
 
-from pyptv._backend import Calibration, external_calibration, full_calibration, TargetArray
+from openptv_python.calibration import Calibration
+from openptv_python.orientation import external_calibration, full_calibration
+from openptv_python.tracking_frame_buf import TargetArray
 
-from pyptv.parameter_manager import ParameterManager
-from pyptv import ptv
+from .parameter_manager import ParameterManager
+from . import ptv
 
 
 NAMES: list[str] = ["cc", "xh", "yh", "k1", "k2", "k3", "p1", "p2", "scale", "shear"]

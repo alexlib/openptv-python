@@ -27,10 +27,10 @@ from typing import Iterable, Sequence
 import numpy as np
 from scipy.optimize import least_squares
 
-from pyptv._backend import convert_arr_pixel_to_metric
+from openptv_python.trafo import arr_pixel_to_metric as convert_arr_pixel_to_metric
 
-from pyptv.parameter_manager import ParameterManager
-from pyptv import ptv
+from .parameter_manager import ParameterManager
+from . import ptv
 
 
 @dataclass(frozen=True)
@@ -176,7 +176,7 @@ def run_dumbbell_calibration(
         cpar=cpar,
     )
     if db_eps > 0:
-        from pyptv._backend import multi_cam_point_positions
+        from openptv_python.orientation import multi_cam_point_positions
 
         num_frames = int(n_used)
         per_frame = all_targs_metric.reshape(num_cams, num_frames, 2, 2)
@@ -205,7 +205,8 @@ def run_dumbbell_calibration(
     print(f"Using {n_used} frame(s) for dumbbell calibration (of {n_total})")
 
     def _print_camera_residuals(label: str, metric_targets: np.ndarray) -> None:
-        from pyptv._backend import image_coordinates, multi_cam_point_positions
+        from openptv_python.imgcoord import image_coordinates
+        from openptv_python.orientation import multi_cam_point_positions
 
         num_cams_local, num_frames_local, num_targs_local, _ = metric_targets.shape
         sums = np.zeros(num_cams_local, dtype=float)
@@ -261,7 +262,7 @@ def run_dumbbell_calibration(
         ptr += 1
 
     def _init_dumbbell_points(metric_targets: np.ndarray) -> np.ndarray:
-        from pyptv._backend import multi_cam_point_positions
+        from openptv_python.orientation import multi_cam_point_positions
 
         num_cams_local, num_frames_local, _, _ = metric_targets.shape
         points = np.zeros((num_frames_local, 2, 3), dtype=float)

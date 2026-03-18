@@ -29,10 +29,10 @@ from skimage.io import imread
 from skimage.util import img_as_ubyte
 from skimage.color import rgb2gray
 
-from pyptv._backend import target_recognition
-from pyptv import ptv
-from pyptv.text_box_overlay import TextBoxOverlay
-from pyptv.quiverplot import QuiverPlot
+from openptv_python.segmentation import target_recognition
+from . import ptv
+from .text_box_overlay import TextBoxOverlay
+from .quiverplot import QuiverPlot
 
 
 # -------------------------------------------

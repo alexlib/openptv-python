@@ -13,13 +13,13 @@ import sys
 import json
 import importlib
 
-from pyptv.ptv import generate_short_file_bases, py_start_proc_c
-from pyptv.experiment import Experiment
+from .ptv import generate_short_file_bases, py_start_proc_c
+from .experiment import Experiment
 
 
 def load_plugins_config(exp_path: Path):
     """Load available plugins from experiment parameters (YAML) with fallback to plugins.json"""
-    from pyptv.experiment import Experiment
+    from .experiment import Experiment
     try:
         experiment = Experiment()
         experiment.pm.from_yaml(exp_path)  # Corrected to use exp_path

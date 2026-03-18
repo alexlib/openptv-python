@@ -28,8 +28,8 @@ def _():
     import matplotlib.pyplot as plt
     from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 
-    from pyptv._backend import Calibration
-    from pyptv.parameter_manager import ParameterManager
+    from openptv_python.calibration import Calibration
+    from .parameter_manager import ParameterManager
 
     return Calibration, ParameterManager, Path, np, plt
 

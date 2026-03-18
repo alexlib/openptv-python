@@ -28,23 +28,18 @@ from chaco.api import (
 from chaco.tools.image_inspector_tool import ImageInspectorTool
 from chaco.tools.better_zoom import BetterZoom as SimpleZoom
 
-from pyptv.text_box_overlay import TextBoxOverlay
-from pyptv.code_editor import oriEditor, addparEditor
+from .text_box_overlay import TextBoxOverlay
+from .code_editor import oriEditor, addparEditor
+
+from openptv_python.calibration import Calibration
+from openptv_python.imgcoord import image_coordinates
+from openptv_python.orientation import external_calibration, full_calibration, match_detection_to_ref
+from openptv_python.tracking_frame_buf import TargetArray
+from openptv_python.trafo import arr_metric_to_pixel as convert_arr_metric_to_pixel
 
 
-from pyptv._backend import (
-    Calibration,
-    TargetArray,
-    convert_arr_metric_to_pixel,
-    external_calibration,
-    full_calibration,
-    image_coordinates,
-    match_detection_to_ref,
-)
-
-
-from pyptv import ptv
-from pyptv.experiment import Experiment
+from . import ptv
+from .experiment import Experiment
 
 
 # recognized names for the flags:
@@ -276,7 +271,7 @@ class CalibrationGUI(HasTraits):
         print(f"Calibration GUI working directory: {Path.cwd()}")
 
         # Create Experiment using the YAML file
-        from pyptv.parameter_manager import ParameterManager
+        from .parameter_manager import ParameterManager
         pm = ParameterManager()
         pm.from_yaml(self.yaml_path)
         self.experiment = Experiment(pm=pm)
@@ -421,7 +416,7 @@ class CalibrationGUI(HasTraits):
     )
 
     def _button_edit_cal_parameters_fired(self):
-        from pyptv.parameter_gui import Calib_Params
+        from .parameter_gui import Calib_Params
         
         # Create and show the calibration parameters GUI
         calib_params_gui = Calib_Params(experiment=self.experiment)
