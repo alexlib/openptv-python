@@ -4,7 +4,7 @@ import pytest
 from pathlib import Path
 from pyptv.parameter_manager import ParameterManager
 from pyptv.ptv import Tracker
-from optv.tracker import Tracker, default_naming
+from pyptv._backend import Tracker, default_naming
 
 @pytest.mark.usefixtures("tmp_path")
 def test_tracker_minimal(tmp_path):
@@ -33,10 +33,6 @@ def test_tracker_minimal(tmp_path):
 
         from pyptv.ptv import py_start_proc_c
         cpar, spar, vpar, track_par, tpar, cals, epar = py_start_proc_c(pm)
-
-        for cam_id, short_name in enumerate(pm.get_target_filenames()):
-            # print(f"Setting tracker image base name for cam {cam_id+1}: {Path(short_name).resolve()}")
-            spar.set_img_base_name(cam_id, str(Path(short_name).resolve())+'.')
 
         # Set up tracker using loaded parameters
         tracker = Tracker(

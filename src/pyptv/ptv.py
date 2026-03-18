@@ -29,7 +29,6 @@ from pyptv._backend import (
     TargetParams,
     VolumeParams,
     Frame,
-    correspondences,
     MatchedCoords,
     preprocess_image,
     point_positions,
@@ -39,6 +38,8 @@ from pyptv._backend import (
     default_naming,
     convert_arr_pixel_to_metric,
 )
+from openptv_python.tracking_frame_buf import sort_target_y
+from openptv_python.correspondences import py_correspondences
 
 """
 example from Tracker documentation: 
@@ -449,27 +450,15 @@ def py_detection_proc_c(
     return detections, corrected
 
 
-def py_correspondences_proc_c(exp):
+def py_correspondences_proc_c(exp, frame=DEFAULT_FRAME_NUM):
     """Provides correspondences
     """
-    frame = Frame(exp.num_cams)
-    for i_cam, targs in enumerate(exp.detections):
-        frame.targets[i_cam] = targs
-        try:
-            frame.num_targets[i_cam] = len(targs)
-        except TypeError:
-            frame.num_targets[i_cam] = getattr(targs, "num_targs", 0)
-
-    try:
-        corrected = [
-            corr.coords if hasattr(corr, "coords") else corr for corr in exp.corrected
-        ]
-    except TypeError:
-        corrected = exp.corrected
-    match_counts = [0] * exp.num_cams
-
-    sorted_pos, sorted_corresp, num_targs = correspondences(
-        frame, corrected, exp.vpar, exp.cpar, exp.cals, match_counts
+    sorted_pos, sorted_corresp, num_targs = py_correspondences(
+        exp.detections,
+        exp.corrected,
+        exp.cals,
+        exp.vpar,
+        exp.cpar,
     )
 
     # img_base_names = [exp.spar.get_img_base_name(i) for i in range(exp.num_cams)]
@@ -670,19 +659,18 @@ def py_sequence_loop(exp) -> None:
                 targs = target_recognition(high_pass, tpar, i_cam, cpar)
 
             if len(targs) > 0:
-                targs.sort_y()
+                targs = sort_target_y(targs)
 
             detections.append(targs)
             matched_coords = MatchedCoords(targs, cpar, cals[i_cam])
             pos, _ = matched_coords.as_arrays()
             corrected.append(matched_coords)
 
-        # AFter we finished all targs, we can move to correspondences    
-        sorted_pos, sorted_corresp, _ = correspondences(
-            detections, corrected, cals, vpar, cpar
-        )
-        for i_cam in range(num_cams):
-            write_targets(detections[i_cam], short_file_bases[i_cam], frame)
+        # Keep the processed frame data on the experiment object so the
+        # correspondence wrapper can use the current unified API contract.
+        exp.detections = detections
+        exp.corrected = corrected
+        sorted_pos, sorted_corresp, _ = py_correspondences_proc_c(exp, frame)
         print(
             "Frame "
             + str(frame)

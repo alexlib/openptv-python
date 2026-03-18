@@ -76,6 +76,9 @@ class MatchedCoords:
     def __getitem__(self, item):
         return self._coords[item]
 
+    def __getattr__(self, item):
+        return getattr(self._coords, item)
+
 
 def safely_allocate_target_usage_marks(
     num_cams: int, nmax: int = NMAX

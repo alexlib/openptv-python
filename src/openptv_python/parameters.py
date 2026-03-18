@@ -281,6 +281,10 @@ class TrackPar(Parameters):
         """Return the minimum velocity in z direction."""
         return self.dvzmin
 
+    def get_dvzmin(self):
+        """Return the minimum velocity in z direction."""
+        return self.dvzmin
+
     def set_dvzmin(self, value):
         """Set the minimum velocity in z direction."""
         self.dvzmin = value
@@ -289,7 +293,19 @@ class TrackPar(Parameters):
         """Return the minimum velocity in z direction."""
         return self.dvzmax
 
+    def get_dvzmax(self):
+        """Return the maximum velocity in z direction."""
+        return self.dvzmax
+
     def set_dvzmax(self, value):
+        """Set the maximum velocity in z direction."""
+        self.dvzmax = value
+
+    def set_dvz_min(self, value):
+        """Set the minimum velocity in z direction."""
+        self.dvzmin = value
+
+    def set_dvz_max(self, value):
         """Set the maximum velocity in z direction."""
         self.dvzmax = value
 

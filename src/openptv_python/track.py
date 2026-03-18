@@ -12,6 +12,7 @@ from .constants import (
     COORD_UNUSED,
     CORRES_NONE,
     MAX_CANDS,
+    MAX_TARGETS,
     NEXT_NONE,
     POS_INF,
     PREV_NONE,
