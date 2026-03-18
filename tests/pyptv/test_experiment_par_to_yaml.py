@@ -3,7 +3,7 @@ from pathlib import Path
 from pyptv.parameter_manager import ParameterManager
 import yaml
 
-TRACK_DIR = Path(__file__).parent / "test_cavity"
+TRACK_DIR = Path(__file__).parent.parent / "working_folder" / "test_cavity"
 
 @pytest.mark.parametrize("param_dir,param_yaml", [
     ("parameters", "parameters_Run1.yaml"),

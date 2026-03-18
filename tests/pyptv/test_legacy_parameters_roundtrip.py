@@ -5,7 +5,7 @@ import shutil
 
 def test_legacy_parameters_roundtrip(tmp_path):
     # Source directory with original parameter files
-    src_dir = Path(__file__).parent / "test_cavity" / "parameters"
+    src_dir = Path(__file__).parent.parent / "working_folder" / "test_cavity" / "parameters"
     assert src_dir.exists(), f"Source directory {src_dir} does not exist!"
 
     # Destination directory for roundtrip

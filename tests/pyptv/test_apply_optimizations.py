@@ -14,7 +14,7 @@ from pathlib import Path
 def apply_optimized_parameters():
     """Apply the optimized tracking parameters found through testing"""
     
-    test_path = Path(__file__).parent / "test_splitter"
+    test_path = Path(__file__).parent.parent / "working_folder" / "test_splitter"
     yaml_file = test_path / "parameters_Run1.yaml"
     
     if not yaml_file.exists():
@@ -59,7 +59,7 @@ def test_optimized_performance():
     
     import subprocess
     
-    test_path = Path(__file__).parent / "test_splitter"
+    test_path = Path(__file__).parent.parent / "working_folder" / "test_splitter"
     yaml_file = test_path / "parameters_Run1.yaml"
     script_path = Path(__file__).parent.parent / "pyptv" / "pyptv_batch_plugins.py"
     cmd = [

@@ -9,7 +9,7 @@ def test_ext_sequence_splitter():
     """Test the ext_sequence_splitter plugin using batch command (proven working approach)"""
     
     # Path to the test data (in tests/ directory)
-    test_path = Path(__file__).parent / "test_splitter"
+    test_path = Path(__file__).parent.parent / "working_folder" / "test_splitter"
     
     if not test_path.exists():
         print(f"❌ Test data not found: {test_path}")
@@ -89,7 +89,7 @@ def test_batch_command():
     
     # Fix paths for running from tests/ directory
     script_path = Path(__file__).parent.parent / "pyptv" / "pyptv_batch_plugins.py"
-    test_exp_path = Path(__file__).parent / "test_splitter"
+    test_exp_path = Path(__file__).parent.parent / "working_folder" / "test_splitter"
     
     if not script_path.exists():
         print(f"❌ Batch script not found: {script_path}")

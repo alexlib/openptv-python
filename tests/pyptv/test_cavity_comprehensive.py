@@ -20,7 +20,7 @@ from skimage.util import img_as_ubyte
 def test_cavity_setup():
     """Setup fixture for test_cavity experiment"""
     software_path = Path(__file__).parent.parent
-    test_cavity_path = software_path / "tests" / "test_cavity"
+    test_cavity_path = software_path / "working_folder" / "test_cavity"
     
     if not test_cavity_path.exists():
         pytest.skip(f"Test cavity directory does not exist: {test_cavity_path}")
@@ -54,7 +54,7 @@ def test_cavity_setup():
 def test_cavity_directory_structure():
     """Test that test_cavity directory has expected structure"""
     software_path = Path(__file__).parent.parent
-    test_cavity_path = software_path / "tests" / "test_cavity"
+    test_cavity_path = software_path / "working_folder" / "test_cavity"
     
     assert test_cavity_path.exists(), f"Test cavity directory does not exist: {test_cavity_path}"
     

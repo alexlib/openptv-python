@@ -55,7 +55,7 @@ def _():
 
     present_folder = Path.cwd()
 
-    working_folder = Path("/home/user/Documents/repos/test_cavity")
+    working_folder = Path.cwd() / "tests" / "working_folder" / "test_cavity"
     par_path = working_folder / "parameters"
     working_folder.exists(), par_path.exists()
 

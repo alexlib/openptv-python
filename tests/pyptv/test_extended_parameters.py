@@ -10,7 +10,7 @@ import pytest
 def test_extended_acceleration_range():
     """Smoke test a bounded acceleration sweep."""
     
-    test_path = Path(__file__).parent / "test_splitter"
+    test_path = Path(__file__).parent.parent / "working_folder" / "test_splitter"
     
     print("🔍 Testing extended acceleration constraint range...")
     print("="*60)
@@ -55,7 +55,7 @@ def test_extended_acceleration_range():
 def test_velocity_parameter_interaction():
     """Smoke test one bounded velocity and acceleration interaction set."""
     
-    test_path = Path(__file__).parent / "test_splitter"
+    test_path = Path(__file__).parent.parent / "working_folder" / "test_splitter"
     
     print("🔍 Testing velocity-acceleration parameter interactions...")
     print("="*60)

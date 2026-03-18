@@ -14,7 +14,7 @@ from pyptv.pyptv_batch_plugins import run_batch
 def test_tracking_parameters_propagation():
     """Test that tracking parameters are correctly transferred from YAML to C/Cython tracking code"""
     
-    test_path = Path(__file__).parent / "test_splitter"
+    test_path = Path(__file__).parent.parent / "working_folder" / "test_splitter"
     
     if not test_path.exists():
         pytest.skip(f"Test data not found: {test_path}")
@@ -105,7 +105,7 @@ def test_tracking_parameters_missing_fail():
 
 def test_tracking_parameters_in_batch_run():
     """Test tracking parameters in actual batch run using pyptv_batch_splitter functions with detailed output"""
-    test_path = Path(__file__).parent / "test_splitter"
+    test_path = Path(__file__).parent.parent / "working_folder" / "test_splitter"
     if not test_path.exists():
         pytest.skip(f"Test data not found: {test_path}")
 
@@ -174,7 +174,7 @@ def test_tracking_parameters_in_batch_run():
 def test_parameter_propagation_with_corrupted_yaml():
     """Test behavior when YAML has corrupted tracking parameters"""
     
-    test_path = Path(__file__).parent / "test_splitter"
+    test_path = Path(__file__).parent.parent / "working_folder" / "test_splitter"
     
     if not test_path.exists():
         pytest.skip(f"Test data not found: {test_path}")
@@ -229,7 +229,7 @@ def test_parameter_propagation_with_corrupted_yaml():
 
 def test_tracking_parameters_yaml_and_c_conversion():
     """Test YAML tracking parameters and their conversion to C/Cython objects."""
-    test_path = Path(__file__).parent / "test_splitter"
+    test_path = Path(__file__).parent.parent / "working_folder" / "test_splitter"
     if not test_path.exists():
         pytest.skip(f"Test data not found: {test_path}")
     from pyptv.experiment import Experiment
@@ -271,7 +271,7 @@ def test_tracking_parameters_missing_raises():
 
 def test_parameter_propagation_with_corrupted_yaml_unit():
     """Test behavior when YAML has corrupted tracking parameters (unit test)."""
-    test_path = Path(__file__).parent / "test_splitter"
+    test_path = Path(__file__).parent.parent / "working_folder" / "test_splitter"
     if not test_path.exists():
         pytest.skip(f"Test data not found: {test_path}")
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -306,7 +306,7 @@ def test_parameter_propagation_with_corrupted_yaml_unit():
 def test_tracking_parameters_in_batch_run_plugin():
     """Test tracking parameters in actual batch run using plugin with detailed output"""
     
-    test_path = Path(__file__).parent / "test_splitter"
+    test_path = Path(__file__).parent.parent / "working_folder" / "test_splitter"
     
     if not test_path.exists():
         pytest.skip(f"Test data not found: {test_path}")

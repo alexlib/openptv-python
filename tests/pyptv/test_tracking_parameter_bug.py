@@ -15,7 +15,7 @@ class TestTrackingParameterBug:
         """Test tracking parameter translation in test_cavity to debug poor tracking performance."""
         
         # Load test_cavity parameters
-        test_cavity_path = Path(__file__).parent / "test_cavity"
+        test_cavity_path = Path(__file__).parent.parent / "working_folder" / "test_cavity"
         param_file = test_cavity_path / "parameters_Run1.yaml"
         
         if not param_file.exists():
@@ -159,7 +159,7 @@ class TestTrackingParameterBug:
     def test_splitter_tracking_parameter_translation(self):
         """Test tracking parameter translation in test_splitter for comparison."""
         
-        test_splitter_path = Path(__file__).parent / "test_splitter"
+        test_splitter_path = Path(__file__).parent.parent / "working_folder" / "test_splitter"
         param_file = test_splitter_path / "parameters_Run1.yaml"
         
         if not param_file.exists():

@@ -22,7 +22,7 @@ def _copy_tree(src: Path, dst: Path) -> None:
 def test_standalone_calibration_full_cycle(tmp_path: Path):
     """GT -> synthetic 2D -> full_calibration -> reprojection error ~= 0."""
 
-    src = Path(__file__).parent / "test_cavity"
+    src = Path(__file__).parent.parent / "working_folder" / "test_cavity"
     work = tmp_path / "cavity"
     _copy_tree(src, work)
 

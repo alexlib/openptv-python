@@ -10,7 +10,7 @@ def test_batch_plugins_runs():
     
     # Path to the script
     script_path = Path(__file__).parent.parent / "pyptv" / "pyptv_batch_plugins.py"
-    test_exp_path = Path(__file__).parent.parent / "tests" / "test_splitter"
+    test_exp_path = Path(__file__).parent.parent / "working_folder" / "test_splitter"
     yaml_file = test_exp_path / "parameters_Run1.yaml"
     
     # Check if test experiment exists

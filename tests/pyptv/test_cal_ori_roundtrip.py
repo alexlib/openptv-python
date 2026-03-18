@@ -5,8 +5,8 @@ import pytest
 from pyptv.parameter_manager import ParameterManager
 
 @pytest.mark.parametrize("src_dir", [
-    "tests/test_cavity/parameters",
-    "tests/test_splitter/parameters",
+    "tests/working_folder/test_cavity/parameters",
+    "tests/working_folder/test_splitter/parameters",
 ])
 def test_cal_ori_roundtrip(src_dir, tmp_path):
     work_dir = tmp_path / "par_files"

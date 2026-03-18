@@ -18,7 +18,7 @@ def test_parameter_access_performance():
     """Test different parameter access patterns for performance"""
     
     # Setup experiment with test_cavity data
-    test_cavity_path = Path(__file__).parent / "test_cavity"
+    test_cavity_path = Path(__file__).parent.parent / "working_folder" / "test_cavity"
     if not test_cavity_path.exists():
         print("Test cavity not found, skipping performance test")
         return
@@ -114,7 +114,7 @@ def test_parameter_access_performance():
 def test_parameter_change_scenarios():
     """Test different scenarios for parameter changes"""
     
-    test_cavity_path = Path(__file__).parent / "test_cavity"
+    test_cavity_path = Path(__file__).parent.parent / "working_folder" / "test_cavity"
     if not test_cavity_path.exists():
         print("Test cavity not found, skipping change scenarios test")
         return
