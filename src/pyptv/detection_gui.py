@@ -285,7 +285,7 @@ class DetectionGUI(HasTraits):
     # Buttons to apply range changes
     button_update_ranges = Button(label="Update Slider Ranges")
 
-    def __init__(self, working_directory=Path("tests/test_cavity")):
+    def __init__(self, working_directory=Path("tests/testing_folder/test_cavity")):
         super(DetectionGUI, self).__init__()
 
         self.working_directory = Path(working_directory)
@@ -810,7 +810,7 @@ class DetectionGUI(HasTraits):
 if __name__ == "__main__":
     if len(sys.argv) == 1:
         # Default to test_cavity directory
-        working_dir = Path().absolute() / "tests" / "test_cavity"
+        working_dir = Path().absolute() / "tests" / "testing_folder" / "test_cavity"
     else:
         # Use provided working directory path
         working_dir = Path(sys.argv[1])

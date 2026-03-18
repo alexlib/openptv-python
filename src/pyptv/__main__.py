@@ -1,3 +1,3 @@
-from . import cli
+from .pyptv_gui import main
 
-cli()
+main()

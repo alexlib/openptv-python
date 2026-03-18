@@ -1530,6 +1530,7 @@ def main():
         # Fallback to a bundled test directory if no argument is given.
         # Prefer the repository copy when available, otherwise use the GUI test data.
         candidate_paths = [
+            software_path / "tests" / "testing_folder" / "test_cavity",
             software_path / "tests" / "test_cavity",
             software_path / "src" / "pyptv" / "tests" / "test_cavity",
         ]

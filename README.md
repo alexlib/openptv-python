@@ -7,19 +7,20 @@ Python version of the OpenPTV library - this is *a work in progress*
 `openptv-python` keeps the Python API as the main interface and combines three
 execution modes behind that API:
 
-- Pure Python: the reference implementation and the easiest path for reading,
-  debugging, and extending the code.
-- Python + Numba: several hot kernels are JIT-compiled automatically on first
+- **Pure Python**: the reference implementation and the easiest path for reading,
+  debugging, and extending the code. Always available as fallback.
+- **Python + Numba**: several hot kernels are JIT-compiled automatically on first
   use, so the Python implementation still benefits from acceleration.
-- Native `optv` bindings: selected operations reuse the native OpenPTV
-  implementation when the `optv` package is available.
-- PyPTV GUI: packaged in the same repository and installed as an optional
-  application package.
+- **Native `optv` bindings** (default): selected operations reuse the native OpenPTV
+  implementation. Installed by default on supported platforms (Linux, macOS, Windows).
 
 At the moment, automatic native delegation is implemented for image
 preprocessing and full-frame target recognition. The rest of the library keeps
 the same Python API and remains usable even when those native paths are not in
 use.
+
+If `optv` is not available on your platform, the package automatically falls back
+to pure Python/Numba implementations without any configuration needed.
 
 ## How this is started
 
@@ -43,15 +44,7 @@ source .venv/bin/activate
 uv sync
 ```
 
-This gives you the standard runtime stack: NumPy, SciPy, Numba, and YAML
-support.
-
-If you also want native `optv` delegation when bindings are available for your
-platform and Python version, install the optional extra:
-
-```bash
-uv sync --extra native
-```
+This gives you the standard runtime stack: NumPy, SciPy, Numba, YAML, and the native `optv` bindings for accelerated image preprocessing and target recognition.
 
 If you also want the GUI application, install the GUI extra:
 
@@ -65,12 +58,6 @@ uv sync --extra gui
 conda create -n openptv-python -c conda-forge python=3.12
 conda activate openptv-python
 pip install .
-```
-
-Optional native bindings:
-
-```bash
-pip install ".[native]"
 ```
 
 Optional GUI application:
@@ -99,14 +86,10 @@ pip install -e ".[dev]"
 
 ### What gets installed
 
-- The default install contains the runtime dependencies only.
-- The optional `native` extra adds `optv` bindings for automatic native
-  delegation on supported platforms.
+- The default install includes `optv` bindings for automatic native delegation on supported platforms (Linux, macOS, Windows).
 - The optional `gui` extra adds the PyPTV GUI and its runtime dependencies.
-- The optional `dev` extra adds test, docs, typing, pre-commit, and GUI
-  tooling for contributors.
-- The public API stays the same regardless of which backend extras are
-  installed.
+- The optional `dev` extra adds test, docs, typing, pre-commit, and GUI tooling for contributors.
+- If `optv` fails to install on your platform, the package falls back to pure Python/Numba implementations automatically.
 
 ## Backend Behavior
 
@@ -161,13 +144,9 @@ Use one of the installation methods above.
 uv run python - <<'PY'
 import openptv_python
 import numba
-try:
-  import optv
-except ImportError:
-  print("optv not installed; native delegation disabled")
-else:
-  print("optv ok", optv.__version__)
+import optv
 
+print("optv ok", optv.__version__)
 print("openptv_python ok")
 print("numba ok", numba.__version__)
 PY
