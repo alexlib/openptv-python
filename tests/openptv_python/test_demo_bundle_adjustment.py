@@ -450,7 +450,7 @@ class TestBundleAdjustmentDemo(unittest.TestCase):
             normalize_staged_release_order([0, 1, 2], 4)
 
     def test_pose_demo_keeps_fixed_cameras_on_reference_geometry(self):
-        cavity_dir = Path("tests/testing_fodder/test_cavity")
+        cavity_dir = Path("tests/testing_folder/test_cavity")
         control = ControlPar(4).from_file(cavity_dir / "parameters/ptv.par")
         true_cals = load_calibrations(cavity_dir, 4)
         start_cals = perturb_calibrations(true_cals, 1.0)
@@ -540,7 +540,7 @@ class TestBundleAdjustmentDemo(unittest.TestCase):
         self.assertAlmostEqual(diagnostics[0].mean_free_position_shift, 0.45)
 
     def test_epipolar_and_quadruplet_diagnostics_detect_perturbation(self):
-        cavity_dir = Path("tests/testing_fodder/test_cavity")
+        cavity_dir = Path("tests/testing_folder/test_cavity")
         control = ControlPar(4).from_file(cavity_dir / "parameters/ptv.par")
         vpar = read_volume_par(cavity_dir / "parameters/criteria.par")
         cals = [

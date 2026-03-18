@@ -50,7 +50,7 @@ par_dict = {
 
 
 parameters = read_parameters_from_yaml(
-    Path("tests/testing_fodder/parameters/merged_parameters.yaml")
+    Path("tests/testing_folder/parameters/merged_parameters.yaml")
 )
 
 for key in parameters:

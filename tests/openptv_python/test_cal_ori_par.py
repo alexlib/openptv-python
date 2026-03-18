@@ -8,7 +8,7 @@ class TestCalibrationParameters(unittest.TestCase):
     """Tests for the read_cal_ori_parameters function."""
 
     def setUp(self):
-        self.temp_file = Path("tests/testing_fodder/parameters/cal_ori.par")
+        self.temp_file = Path("tests/testing_folder/parameters/cal_ori.par")
 
     # def tearDown(self):
     #     # Close and remove the temporary file

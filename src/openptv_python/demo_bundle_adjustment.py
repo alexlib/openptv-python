@@ -2427,7 +2427,7 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         "case_dir",
         type=Path,
         nargs="?",
-        default=Path("tests/testing_fodder/test_cavity"),
+        default=Path("tests/testing_folder/test_cavity"),
         help="Case folder containing cal/, parameters/, res_orig/, and img_orig/.",
     )
     parser.add_argument(

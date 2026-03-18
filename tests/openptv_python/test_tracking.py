@@ -59,8 +59,8 @@ def copy_directory(source_path, destination_path):
 
 def read_all_calibration(num_cams: int = 4) -> list[Calibration]:
     """Read all calibration files."""
-    ori_tmpl = "tests/testing_fodder/track/cal/cam%d.tif.ori"
-    added_tmpl = "tests/testing_fodder/track/cal/cam%d.tif.addpar"
+    ori_tmpl = "tests/testing_folder/track/cal/cam%d.tif.ori"
+    added_tmpl = "tests/testing_folder/track/cal/cam%d.tif.addpar"
 
     calib = []
 
@@ -367,7 +367,7 @@ class TestSort(unittest.TestCase):
 class TestSearchQuader(unittest.TestCase):
     def setUp(self):
         self.cpar = ControlPar().from_file(
-            Path("tests/testing_fodder/track/parameters/ptv.par")
+            Path("tests/testing_folder/track/parameters/ptv.par")
         )
         self.cpar.mm.n2[0] = 1.0
         self.cpar.mm.n3 = 1.0

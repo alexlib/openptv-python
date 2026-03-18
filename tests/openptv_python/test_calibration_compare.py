@@ -13,7 +13,7 @@ from openptv_python.calibration_compare import (
 
 class TestCalibrationCompare(unittest.TestCase):
     def test_compare_same_folder_is_zero(self):
-        cavity_cal_dir = Path("tests/testing_fodder/test_cavity/cal")
+        cavity_cal_dir = Path("tests/testing_folder/test_cavity/cal")
         deltas = compare_calibration_folders(cavity_cal_dir, cavity_cal_dir)
 
         self.assertEqual(sorted(deltas.keys()), [f"cam{i}.tif" for i in range(1, 5)])
@@ -25,7 +25,7 @@ class TestCalibrationCompare(unittest.TestCase):
             np.testing.assert_allclose(delta.added_par_delta, 0.0)
 
     def test_compare_modified_folder_reports_numeric_deltas(self):
-        cavity_cal_dir = Path("tests/testing_fodder/test_cavity/cal")
+        cavity_cal_dir = Path("tests/testing_folder/test_cavity/cal")
 
         with tempfile.TemporaryDirectory() as tmp_dir_name:
             tmp_dir = Path(tmp_dir_name)

@@ -29,7 +29,7 @@ class TestReadTargets(unittest.TestCase):
         t1 = Target(0, 1127.0000, 796.0000, 13320, 111, 120, 828903, 1)
         t2 = Target(1, 796.0000, 809.0000, 13108, 113, 116, 658928, 0)
 
-        file_base = "tests/testing_fodder/sample_%04d"
+        file_base = "tests/testing_folder/sample_%04d"
         frame_num = 42
 
         tbuf = read_targets(file_base, frame_num)
@@ -59,7 +59,7 @@ class TestZeroTargets(unittest.TestCase):
         -------
         None
         """
-        file_base = "tests/testing_fodder/sample_%04d"
+        file_base = "tests/testing_folder/sample_%04d"
         frame_num = 1
         tbuf = read_targets(file_base, frame_num)
         self.assertEqual(len(tbuf), 0)
@@ -84,7 +84,7 @@ class TestWriteTargets(unittest.TestCase):
         t1 = Target(0, 1127.0000, 796.0000, 13320, 111, 120, 828903, 1)
         t2 = Target(1, 796.0000, 809.0000, 13108, 113, 116, 658928, 0)
 
-        file_base = "tests/testing_fodder/test_%04d"
+        file_base = "tests/testing_folder/test_%04d"
         frame_num = 42
         num_targets = 2
 
@@ -164,9 +164,9 @@ class TestReadPathFrame(unittest.TestCase):
         c_correct.nr = 3
         c_correct.p = np.array([96, 66, 26, 26])
 
-        file_base = "tests/testing_fodder/rt_is"
-        linkage_base = "tests/testing_fodder/ptv_is"
-        prio_base = "tests/testing_fodder/added"
+        file_base = "tests/testing_folder/rt_is"
+        linkage_base = "tests/testing_folder/ptv_is"
+        prio_base = "tests/testing_folder/added"
         frame_num = 818
 
         # Test unlinked frame

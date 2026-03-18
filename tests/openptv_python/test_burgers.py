@@ -69,7 +69,7 @@ class TestBurgers(unittest.TestCase):
         """Test the Burgers vortex case."""
         current_directory = Path.cwd()
         print(f"working from {current_directory}")
-        directory = Path("tests/testing_fodder/burgers")
+        directory = Path("tests/testing_folder/burgers")
         parameters_path = (directory / "parameters").resolve(strict=True)
 
         os.chdir(directory)

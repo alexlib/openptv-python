@@ -129,7 +129,7 @@ def _build_multilayer_case():
 
 class TestMultimedRnlay(unittest.TestCase):
     def setUp(self):
-        filepath = Path("tests") / "testing_fodder"
+        filepath = Path("tests") / "testing_folder"
         ori_file = filepath / "cal" / "cam1.tif.ori"
         add_file = filepath / "cal" / "cam1.tif.addpar"
         self.cal = read_calibration(ori_file, add_file)

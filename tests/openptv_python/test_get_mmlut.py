@@ -12,7 +12,7 @@ from openptv_python.vec_utils import vec_set
 
 class TestGetMmfMmLUT(unittest.TestCase):
     def setUp(self):
-        filepath = Path("tests") / "testing_fodder"
+        filepath = Path("tests") / "testing_folder"
         self.ori_file = filepath / "cal" / "cam2.tif.ori"
         self.add_file = filepath / "cal/cam2.tif.addpar"
         self.vol_file = filepath / "parameters/criteria.par"

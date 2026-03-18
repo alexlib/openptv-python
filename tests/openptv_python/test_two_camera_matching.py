@@ -26,8 +26,8 @@ from openptv_python.trafo import dist_to_flat, metric_to_pixel, pixel_to_metric
 
 def read_all_calibration(num_cams: int = 4) -> list[Calibration]:
     """Read all calibration files."""
-    ori_tmpl = "tests/testing_fodder/cal/sym_cam%d.tif.ori"
-    added_name = Path("tests/testing_fodder/cal/cam1.tif.addpar")
+    ori_tmpl = "tests/testing_folder/cal/sym_cam%d.tif.ori"
+    added_name = Path("tests/testing_folder/cal/cam1.tif.addpar")
 
     calib = []
 
@@ -134,8 +134,8 @@ class TestTwoCameraMatching(unittest.TestCase):
 
         two cameras to get 16 pairs.
         """
-        cpar = read_control_par(Path("tests/testing_fodder/parameters/ptv.par"))
-        vpar = read_volume_par(Path("tests/testing_fodder/parameters/criteria.par"))
+        cpar = read_control_par(Path("tests/testing_folder/parameters/ptv.par"))
+        vpar = read_volume_par(Path("tests/testing_folder/parameters/criteria.par"))
 
         # Cameras are at so high angles that opposing cameras don't see each other
         # in the normal air-glass-water setting.
