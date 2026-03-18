@@ -138,9 +138,19 @@ class SequencePar(Parameters):
     #         'last': self.last,
     #     }
 
-    def set_img_base_name(self, new_name: List[str]):
-        """Set the image base name for each camera."""
-        self.img_base_name[:] = new_name
+    def set_img_base_name(self, new_name, value: str | None = None):
+        """Set the image base name for each camera.
+
+        Accepts either a full list of names or a legacy (index, value) call.
+        """
+        if value is None:
+            self.img_base_name[:] = list(new_name)
+            return
+
+        index = int(new_name)
+        while len(self.img_base_name) <= index:
+            self.img_base_name.append("")
+        self.img_base_name[index] = value
 
     def get_img_base_name(self, icam: int = 0):
         """Get the image base name for each camera."""
@@ -239,37 +249,73 @@ class TrackPar(Parameters):
         """Return the minimum velocity in x direction."""
         return self.dvxmin
 
+    def set_dvxmin(self, value):
+        """Set the minimum velocity in x direction."""
+        self.dvxmin = value
+
     def get_dvxmax(self):
         """Return the maximum velocity in x direction."""
         return self.dvxmax
+
+    def set_dvxmax(self, value):
+        """Set the maximum velocity in x direction."""
+        self.dvxmax = value
 
     def get_dvymin(self):
         """Return the minimum velocity in y direction."""
         return self.dvymin
 
+    def set_dvymin(self, value):
+        """Set the minimum velocity in y direction."""
+        self.dvymin = value
+
     def get_dvymax(self):
         """Return the maximum velocity in y direction."""
         return self.dvymax
+
+    def set_dvymax(self, value):
+        """Set the maximum velocity in y direction."""
+        self.dvymax = value
 
     def get_dvz_min(self):
         """Return the minimum velocity in z direction."""
         return self.dvzmin
 
+    def set_dvzmin(self, value):
+        """Set the minimum velocity in z direction."""
+        self.dvzmin = value
+
     def get_dvz_max(self):
         """Return the minimum velocity in z direction."""
         return self.dvzmax
+
+    def set_dvzmax(self, value):
+        """Set the maximum velocity in z direction."""
+        self.dvzmax = value
 
     def get_dangle(self):
         """Return the maximum angle."""
         return self.dangle
 
+    def set_dangle(self, value):
+        """Set the maximum angle."""
+        self.dangle = value
+
     def get_dacc(self):
         """Return the maximum acceleration."""
         return self.dacc
 
+    def set_dacc(self, value):
+        """Set the maximum acceleration."""
+        self.dacc = value
+
     def get_add(self):
         """Return the adding new particles parameter."""
         return self.add
+
+    def set_add(self, value):
+        """Set the adding new particles parameter."""
+        self.add = value
 
     def get_dsumg(self):
         """Return the maximum sum of the gradient."""
@@ -369,9 +415,21 @@ class VolumePar(Parameters):
         """Set the minimum z coordinate of the layers."""
         self.z_min_lay = z_min_lay
 
+    def set_Zmin_lay(self, z_min_lay: list[float]) -> None:
+        """Legacy alias for set_z_min_lay()."""
+        self.set_z_min_lay(z_min_lay)
+
     def set_z_max_lay(self, z_max_lay: list[float]) -> None:
         """Set the maximum z coordinate of the layers."""
         self.z_max_lay = z_max_lay
+
+    def set_Zmax_lay(self, z_max_lay: list[float]) -> None:
+        """Legacy alias for set_z_max_lay()."""
+        self.set_z_max_lay(z_max_lay)
+
+    def set_X_lay(self, x_lay: list[float]) -> None:
+        """Legacy setter for x-layer bounds."""
+        self.x_lay = x_lay
 
     def set_cn(self, cn: float) -> None:
         """Set the refractive index."""
@@ -380,6 +438,10 @@ class VolumePar(Parameters):
     def set_cnx(self, cnx: float) -> None:
         """Set the refractive index in x direction."""
         self.cnx = cnx
+
+    def set_cny(self, cny: float) -> None:
+        """Set the refractive index in y direction."""
+        self.cny = cny
 
     def set_csumg(self, csumg: float) -> None:
         """Set the maximum sum of the gradient."""
@@ -392,6 +454,18 @@ class VolumePar(Parameters):
     def set_corrmin(self, corrmin: float):
         """Set the minimum correlation value of all criteria."""
         self.corrmin = corrmin
+
+    def get_X_lay(self) -> list[float]:
+        """Legacy getter for x-layer bounds."""
+        return self.x_lay
+
+    def get_Zmin_lay(self) -> list[float]:
+        """Legacy getter for z min layer bounds."""
+        return self.z_min_lay
+
+    def get_Zmax_lay(self) -> list[float]:
+        """Legacy getter for z max layer bounds."""
+        return self.z_max_lay
 
     @classmethod
     def from_file(cls, filename: Path):
@@ -689,21 +763,45 @@ class TargetPar(Parameters):
         """Return the grey thresholds."""
         return self.gvthresh
 
+    def set_grey_thresholds(self, thresholds: list[int]) -> None:
+        """Set the grey thresholds."""
+        self.gvthresh = list(thresholds)
+
     def get_pixel_count_bounds(self):
         """Return the pixel count bounds."""
         return (self.nnmin, self.nnmax)
+
+    def set_pixel_count_bounds(self, bounds: tuple[int, int]) -> None:
+        """Set the pixel count bounds."""
+        self.nnmin, self.nnmax = bounds
 
     def get_xsize_bounds(self):
         """Return the xsize bounds."""
         return (self.nxmin, self.nxmax)
 
+    def set_xsize_bounds(self, bounds: tuple[int, int]) -> None:
+        """Set the xsize bounds."""
+        self.nxmin, self.nxmax = bounds
+
     def get_ysize_bounds(self):
         """Return the ysize bounds."""
         return (self.nymin, self.nymax)
 
+    def set_ysize_bounds(self, bounds: tuple[int, int]) -> None:
+        """Set the ysize bounds."""
+        self.nymin, self.nymax = bounds
+
     def get_min_sum_grey(self):
         """Return the sum grey bounds."""
         return self.sumg_min
+
+    def set_min_sum_grey(self, value: int) -> None:
+        """Set the minimum sum grey value."""
+        self.sumg_min = value
+
+    def set_max_discontinuity(self, value: int) -> None:
+        """Set the maximum discontinuity."""
+        self.discont = value
 
 
 def read_target_par(filename: Path) -> TargetPar:

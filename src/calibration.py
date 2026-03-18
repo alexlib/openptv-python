@@ -1,6 +1,7 @@
 """Calibration data structures and functions."""
 
 import copy
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -129,7 +130,7 @@ class Calibration:
         self.mmlut_data = mmlut_data
 
     @classmethod
-    def from_file(cls, ori_file: Path, add_file: Path | None):
+    def from_file(cls, ori_file: Path | str | bytes, add_file: Path | str | bytes | None):
         """
         Read exterior and interior orientation, and if available, parameters for distortion corrections.
 
@@ -143,6 +144,9 @@ class Calibration:
         -------
         - ext_par, int_par, glass, addp: Calibration object parts without multimedia lookup table.
         """
+        ori_file = Path(os.fsdecode(os.fspath(ori_file)))
+        add_file = None if add_file is None else Path(os.fsdecode(os.fspath(add_file)))
+
         if not ori_file.exists():
             raise IOError(f"File {ori_file} does not exist")
 
