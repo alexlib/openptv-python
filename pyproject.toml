@@ -128,12 +128,12 @@ convention = "numpy"
 packages = ["openptv_python", "pyptv"]
 
 [tool.setuptools.package-dir]
-openptv_python = "src"
-pyptv = "src/pyptv/src"
+openptv_python = "src/openptv_python"
+pyptv = "src/pyptv"
 
 [tool.setuptools_scm]
 fallback_version = "999"
-write_to = "src/version.py"
+write_to = "src/openptv_python/version.py"
 write_to_template = '''
 # Do not change! Do not track in version control!
 __version__ = "{version}"
