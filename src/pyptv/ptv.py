@@ -41,6 +41,8 @@ from ._backend import (
     sort_target_y,
     target_recognition,
 )
+from openptv_python._native_compat import get_multimedia_par
+from openptv_python._native_convert import from_native_calibration
 
 """
 example from Tracker documentation: 
@@ -58,6 +60,13 @@ example from Tracker documentation:
 
 # PyPTV imports
 from .parameter_manager import ParameterManager
+from openptv_python.parameters import (
+    ControlPar as PythonControlPar,
+    SequencePar as PythonSequencePar,
+    TargetPar as PythonTargetPar,
+    TrackPar as PythonTrackPar,
+    VolumePar as PythonVolumePar,
+)
 
 # Constants
 NAMES = ["cc", "xh", "yh", "k1", "k2", "k3", "p1", "p2", "scale", "shear"]
@@ -173,7 +182,7 @@ def _populate_cpar(ptv_params: dict, num_cams: int) -> ControlParams:
     if len([x for x in img_cal_list if x is not None]) < num_cams:
         raise ValueError("img_cal_list is too short")
     
-    cpar = ControlParams(num_cams)
+    cpar = PythonControlPar(num_cams)
     # Set required parameters directly from the dictionary, no defaults
     cpar.set_image_size((ptv_params['imx'], ptv_params['imy']))
     cpar.set_pixel_size((ptv_params['pix_x'], ptv_params['pix_y']))
@@ -212,9 +221,9 @@ def _populate_spar(seq_params: dict, num_cams: int) -> SequenceParams:
         raise ValueError(f"base_name_list length ({len(base_name_list)}) does not match num_cams ({num_cams})")
 
     try:
-        spar = SequenceParams(num_cams=num_cams)
+        spar = PythonSequencePar(num_cams=num_cams)
     except TypeError:
-        spar = SequenceParams()
+        spar = PythonSequencePar()
         spar.set_img_base_name(["" for _ in range(num_cams)])
     spar.set_first(seq_params['first'])
     spar.set_last(seq_params['last'])
@@ -230,7 +239,7 @@ def _populate_spar(seq_params: dict, num_cams: int) -> SequenceParams:
 
 def _populate_vpar(crit_params: dict) -> VolumeParams:
     """Populate a VolumeParams object from a dictionary."""
-    vpar = VolumeParams()
+    vpar = PythonVolumePar()
     vpar.set_X_lay(crit_params['X_lay'])
     vpar.set_Zmin_lay(crit_params['Zmin_lay'])
     vpar.set_Zmax_lay(crit_params['Zmax_lay'])
@@ -258,7 +267,7 @@ def _populate_track_par(track_params: dict) -> TrackingParams:
         raise ValueError(f"Missing required tracking parameters: {missing_params}. "
                         f"Available parameters: {list(track_params.keys())}")
     
-    track_par = TrackingParams()
+    track_par = PythonTrackPar()
 
     assignments = {
         'dvxmin': track_params['dvxmin'],
@@ -287,7 +296,7 @@ def _populate_tpar(targ_params: dict, num_cams: int) -> TargetParams:
     # Get global num_cams - the single source of truth
     # num_cams = params.get('num_cams', 0)
     
-    tpar = TargetParams(num_cams)
+    tpar = PythonTargetPar()
     # Handle both 'targ_rec' and 'detect_plate' parameter variants
     if 'targ_rec' in targ_params:
         params = targ_params['targ_rec']
@@ -395,7 +404,7 @@ def py_start_proc_c(
 
         epar = params.get('examine')
         
-        cals = _read_calibrations(cpar, num_cams)
+        cals = [from_native_calibration(cal) for cal in _read_calibrations(cpar, num_cams)]
 
         return cpar, spar, vpar, track_par, tpar, cals, epar
 
@@ -703,7 +712,7 @@ def py_sequence_loop(exp) -> None:
         )
         pos, _ = point_positions(
             flat.transpose(1, 0, 2),
-            exp.cpar.mm,
+            get_multimedia_par(exp.cpar),
             exp.cals,
             exp.vpar,
         )

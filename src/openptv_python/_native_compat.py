@@ -191,6 +191,56 @@ def should_use_native(feature_name: str | None = None) -> bool:
     return HAS_OPTV
 
 
+def get_num_cams(control_params: Any) -> int:
+    """Return the camera count from either backend's control parameter object."""
+
+    num_cams = getattr(control_params, "num_cams", None)
+    if num_cams is not None:
+        return int(num_cams)
+
+    getter = getattr(control_params, "get_num_cams", None)
+    if callable(getter):
+        return int(getter())
+
+    raise AttributeError("ControlParams object does not expose a camera count")
+    
+def get_multimedia_par(control_params: Any) -> Any:
+    """Return the multimedia-parameter object from either backend."""
+
+    multimedia = getattr(control_params, "mm", None)
+    if multimedia is not None:
+        return multimedia
+
+    getter = getattr(control_params, "get_multimedia_par", None)
+    if callable(getter):
+        multimedia = getter()
+    else:
+        getter = getattr(control_params, "get_multimedia_params", None)
+        if callable(getter):
+            multimedia = getter()
+        else:
+            raise AttributeError(
+                "ControlParams object does not expose multimedia parameters"
+            )
+
+    try:
+        from openptv_python.parameters import MultimediaPar
+    except Exception:
+        return multimedia
+
+    if isinstance(multimedia, MultimediaPar):
+        return multimedia
+
+    converted = MultimediaPar(
+        nlay=int(multimedia.get_nlay()) if hasattr(multimedia, "get_nlay") else 1,
+        n1=float(multimedia.get_n1()) if hasattr(multimedia, "get_n1") else float(getattr(multimedia, "n1", 1.0)),
+        n2=list(multimedia.get_n2()) if hasattr(multimedia, "get_n2") else list(getattr(multimedia, "n2", [1.0])),
+        d=list(multimedia.get_d()) if hasattr(multimedia, "get_d") else list(getattr(multimedia, "d", [0.0])),
+        n3=float(multimedia.get_n3()) if hasattr(multimedia, "get_n3") else float(getattr(multimedia, "n3", 1.0)),
+    )
+    return converted
+
+
 # Initialize once so the default preference is explicit and optv availability
 # is reported immediately in sessions where it is missing.
 set_engine(DEFAULT_ENGINE, warn_once=True)

@@ -8,6 +8,7 @@ from typing import List
 from openptv_python.calibration import Calibration
 from openptv_python.tracking_frame_buf import FrameBuf
 
+from ._native_compat import get_num_cams
 from .multimed import volumedimension
 from .parameters import (
     ControlPar,
@@ -62,7 +63,7 @@ class TrackingRun:
 
         self.fb = FrameBuf(
             buf_len,
-            cpar.num_cams,
+            get_num_cams(cpar),
             max_targets,
             corres_file_base,
             linkage_file_base,
@@ -114,7 +115,7 @@ def tr_new(
 ) -> TrackingRun:
     """Create a new tracking run from legacy files."""
     cpar = read_control_par(cpar_fname)
-    seq_par = read_sequence_par(seq_par_fname, cpar.num_cams)
+    seq_par = read_sequence_par(seq_par_fname, get_num_cams(cpar))
     tpar = convert_track_par_to_tuple(read_track_par(tpar_fname))
     vpar = read_volume_par(vpar_fname)
 

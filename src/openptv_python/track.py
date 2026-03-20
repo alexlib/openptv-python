@@ -21,6 +21,7 @@ from .constants import (
     TR_MAX_CAMS,
     TR_UNUSED,
 )
+from ._native_compat import get_multimedia_par, get_num_cams
 from .imgcoord import img_coord
 from .orientation import point_position
 from .parameters import ControlPar, SequencePar, TrackPar, TrackParTuple, VolumePar, convert_track_par_to_tuple
@@ -427,11 +428,12 @@ def searchquader(
     mins = np.array([tpar.dvxmin, tpar.dvymin, tpar.dvzmin])
     maxes = np.array([tpar.dvxmax, tpar.dvymax, tpar.dvzmax])
 
+    num_cams = get_num_cams(cpar)
     quader = np.zeros((8, 3))
-    xr = np.zeros(cpar.num_cams)
-    xl = np.zeros(cpar.num_cams)
-    yd = np.zeros(cpar.num_cams)
-    yu = np.zeros(cpar.num_cams)
+    xr = np.zeros(num_cams)
+    xl = np.zeros(num_cams)
+    yd = np.zeros(num_cams)
+    yu = np.zeros(num_cams)
 
     for pt in range(8):
         quader[pt] = point.copy()
@@ -444,7 +446,7 @@ def searchquader(
         # print(f" pt {pt} {quader[pt]}")
 
     # calculation of search area in each camera
-    for i in range(cpar.num_cams):
+    for i in range(num_cams):
         # initially large or small values
         xr[i] = 0
         xl[i] = cpar.imx
@@ -574,7 +576,7 @@ def point_to_pixel(point: np.ndarray, cal: Calibration, cpar: ControlPar) -> np.
     # print(f"cal {cal}")
     # print(f"cpar.mm {cpar.mm}")
 
-    x, y = img_coord(point, cal, cpar.mm)
+    x, y = img_coord(point, cal, get_multimedia_par(cpar))
     # print("img coord x, y", x, y)
     x, y = metric_to_pixel(x, y, cpar)
     # print("metric to pixel x, y", x, y)
@@ -648,18 +650,17 @@ def assess_new_position(
 
     """
     # Output variables
-    targ_pos = np.array(
-        [[COORD_UNUSED, COORD_UNUSED] for _ in range(run.cpar.num_cams)]
-    )
-    cand_inds = np.array([[-1] * MAX_CANDS for _ in range(run.cpar.num_cams)])
+    num_cams = get_num_cams(run.cpar)
+    targ_pos = np.array([[COORD_UNUSED, COORD_UNUSED] for _ in range(num_cams)])
+    cand_inds = np.array([[-1] * MAX_CANDS for _ in range(num_cams)])
 
     # Search rectangle limits
     left, right, up, down = ADD_PART, ADD_PART, ADD_PART, ADD_PART
 
-    # for cam in range(run.cpar.num_cams):
+    # for cam in range(num_cams):
     #     targ_pos[cam] = [COORD_UNUSED, COORD_UNUSED]
 
-    for cam in range(run.cpar.num_cams):
+    for cam in range(num_cams):
         # Convert 3D search position to 2D pixel coordinates
         pixel = point_to_pixel(pos, run.cal[cam], run.cpar)
         # print(f"pos {pos}")
@@ -686,7 +687,7 @@ def assess_new_position(
 
     valid_cams = 0
 
-    for cam in range(run.cpar.num_cams):
+    for cam in range(num_cams):
         if (targ_pos[cam][0] != COORD_UNUSED) and (targ_pos[cam][1] != COORD_UNUSED):
             # Convert pixel coordinates to metric coordinates
             x, y = pixel_to_metric(targ_pos[cam][0], targ_pos[cam][1], run.cpar)
@@ -808,8 +809,9 @@ def trackcorr_c_loop(run_info, step):
     cpar = run_info.cpar
     curr_targets = fb.buf[1].targets
 
-    v1 = np.zeros((cpar.num_cams, 2))  # volume center projection on cameras
-    v2 = np.zeros((cpar.num_cams, 2))  # volume center projection on cameras
+    num_cams = get_num_cams(cpar)
+    v1 = np.zeros((num_cams, 2))  # volume center projection on cameras
+    v2 = np.zeros((num_cams, 2))  # volume center projection on cameras
 
     # try to track correspondences from previous 0 - corp, variable h
     orig_parts = fb.buf[1].num_parts
@@ -936,7 +938,7 @@ def trackcorr_c_loop(run_info, step):
             if quali >= 2:
                 in_volume = 0  # inside volume
 
-                dl, X[4] = point_position(v2, cpar.num_cams, cpar.mm, cal)
+                dl, X[4] = point_position(v2, num_cams, get_multimedia_par(cpar), cal)
 
                 # volume check
                 if (
@@ -1006,7 +1008,7 @@ def trackcorr_c_loop(run_info, step):
                 if quali >= 2:
                     X[3] = vec_copy(X[2])
                     in_volume = 0
-                    dl, X[3] = point_position(v2, fb.num_cams, cpar.mm, cal)
+                    dl, X[3] = point_position(v2, fb.num_cams, get_multimedia_par(cpar), cal)
 
                     # in volume check
                     if (
@@ -1210,7 +1212,7 @@ def trackback_c(run_info: TrackingRun):
                         # vec_copy(X[3], X[2])
                         in_volume = 0
 
-                        _, X[3] = point_position(v2, fb.num_cams, cpar.mm, cal)
+                        _, X[3] = point_position(v2, fb.num_cams, get_multimedia_par(cpar), cal)
 
                         # volume check
                         if (

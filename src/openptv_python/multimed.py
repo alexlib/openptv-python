@@ -4,6 +4,7 @@ import numpy as np
 from numba import njit
 
 from .calibration import Calibration
+from ._native_compat import get_multimedia_par, get_num_cams
 from .parameters import (
     ControlPar,
     MultimediaPar,
@@ -263,6 +264,7 @@ def init_mmlut(vpar: VolumePar, cpar: ControlPar, cal: Calibration) -> Calibrati
 
     # intersect with image vertices rays
     cal_t = Calibration(mmlut=cal.mmlut.copy())
+    mm = get_multimedia_par(cpar)
 
     for i in range(2):
         for j in range(2):
@@ -270,10 +272,10 @@ def init_mmlut(vpar: VolumePar, cpar: ControlPar, cal: Calibration) -> Calibrati
             x -= cal.int_par.xh
             y -= cal.int_par.yh
             x, y = correct_brown_affine(x, y, cal.added_par)
-            pos, a = ray_tracing(x, y, cal, cpar.mm)
+            pos, a = ray_tracing(x, y, cal, mm)
             xyz = move_along_ray(z_min, pos, a)
             xyz_t, _, _, cal_t.ext_par.z0 = trans_cam_point(
-                cal.ext_par, cpar.mm, cal.glass_par, xyz
+                cal.ext_par, mm, cal.glass_par, xyz
             )
 
             if xyz_t[2] < z_min_t:
@@ -290,7 +292,7 @@ def init_mmlut(vpar: VolumePar, cpar: ControlPar, cal: Calibration) -> Calibrati
 
             xyz = move_along_ray(z_max, pos, a)
             xyz_t, _, _, cal_t.ext_par.z0 = trans_cam_point(
-                cal.ext_par, cpar.mm, cal.glass_par, xyz
+                cal.ext_par, mm, cal.glass_par, xyz
             )
 
             if xyz_t[2] < z_min_t:
@@ -326,7 +328,7 @@ def init_mmlut(vpar: VolumePar, cpar: ControlPar, cal: Calibration) -> Calibrati
         for i in range(nr):
             for j in range(nz):
                 xyz = np.r_[Ri[i] + cal_t.ext_par.x0, cal_t.ext_par.y0, Zi[j]]
-                cal.mmlut_data.flat[i * nz + j] = multimed_r_nlay(cal_t, cpar.mm, xyz)
+                cal.mmlut_data.flat[i * nz + j] = multimed_r_nlay(cal_t, mm, xyz)
 
         # print(f"filled mmlut data with {data}")
         # cal.mmlut_data = data
@@ -405,6 +407,7 @@ def volumedimension(
     cal: List[Calibration],
 ) -> Tuple[float, float, float, float, float, float]:
     """Calculate the volume dimensions."""
+    mm = get_multimedia_par(cpar)
     xc = [0.0, cpar.imx]
     yc = [0.0, cpar.imy]
 
@@ -416,7 +419,7 @@ def volumedimension(
     if vpar.z_max_lay[1] > z_max:
         z_max = vpar.z_max_lay[1]
 
-    for i_cam in range(cpar.num_cams):
+    for i_cam in range(get_num_cams(cpar)):
         for i in range(2):
             for j in range(2):
                 x, y = pixel_to_metric(xc[i], yc[j], cpar)
@@ -426,7 +429,7 @@ def volumedimension(
 
                 x, y = correct_brown_affine(x, y, cal[i_cam].added_par)
 
-                pos, a = ray_tracing(x, y, cal[i_cam], cpar.mm)
+                pos, a = ray_tracing(x, y, cal[i_cam], mm)
 
                 # TODO: seems that it should be + pos[2] instead of - pos[2]
                 X = pos[0] + (z_min + pos[2]) * a[0] / a[2]
