@@ -9,6 +9,35 @@ from .calibration import Calibration
 from .parameters import ControlPar
 
 
+def _control_image_size(parameters: ControlPar) -> tuple[int, int]:
+    if hasattr(parameters, "get_image_size"):
+        return parameters.get_image_size()
+    return parameters.imx, parameters.imy
+
+
+def _control_pixel_size(parameters: ControlPar) -> tuple[float, float]:
+    if hasattr(parameters, "get_pixel_size"):
+        return parameters.get_pixel_size()
+    return parameters.pix_x, parameters.pix_y
+
+
+def _calibration_primary_point(cal: Calibration) -> tuple[float, float]:
+    if hasattr(cal, "get_primary_point"):
+        primary_point = cal.get_primary_point()
+        return float(primary_point[0]), float(primary_point[1])
+    return float(cal.int_par.xh), float(cal.int_par.yh)
+
+
+def _calibration_added_par(cal: Calibration) -> np.ndarray:
+    if hasattr(cal, "added_par"):
+        return np.asarray(cal.added_par, dtype=np.float64)
+
+    radial = np.asarray(cal.get_radial_distortion(), dtype=np.float64)
+    decentering = np.asarray(cal.get_decentering(), dtype=np.float64)
+    affine = np.asarray(cal.get_affine(), dtype=np.float64)
+    return np.r_[radial, decentering, affine]
+
+
 def pixel_to_metric(
     x_pixel: float, y_pixel: float, parameters: ControlPar
 ) -> Tuple[float, float]:
@@ -20,13 +49,15 @@ def pixel_to_metric(
     x_pixel, y_pixel (float): input pixel coordinates.
     parameters (ControlPar): control structure holding image and pixel sizes.
     """
+    imx, imy = _control_image_size(parameters)
+    pix_x, pix_y = _control_pixel_size(parameters)
     return fast_pixel_to_metric(
         x_pixel,
         y_pixel,
-        parameters.imx,
-        parameters.imy,
-        parameters.pix_x,
-        parameters.pix_y,
+        imx,
+        imy,
+        pix_x,
+        pix_y,
     )
 
 
@@ -80,13 +111,15 @@ def metric_to_pixel(
     -------
     x_pixel, y_pixel (float): output pixel coordinates.
     """
+    imx, imy = _control_image_size(parameters)
+    pix_x, pix_y = _control_pixel_size(parameters)
     return fast_metric_to_pixel(
         x_metric,
         y_metric,
-        parameters.imx,
-        parameters.imy,
-        parameters.pix_x,
-        parameters.pix_y,
+        imx,
+        imy,
+        pix_x,
+        pix_y,
     )
 
 
@@ -115,8 +148,11 @@ def arr_metric_to_pixel(metric: np.ndarray, parameters: ControlPar) -> np.ndarra
     """
     metric = np.atleast_2d(metric)
 
+    imx, imy = _control_image_size(parameters)
+    pix_x, pix_y = _control_pixel_size(parameters)
+
     return fast_arr_metric_to_pixel(
-        metric, parameters.imx, parameters.imy, parameters.pix_x, parameters.pix_y
+        metric, imx, imy, pix_x, pix_y
     )
 
 
@@ -228,13 +264,13 @@ def flat_to_dist(flat_x: float, flat_y: float, cal: Calibration) -> Tuple[float,
     image coordinates, because distortion formula assumes it, [1] p.180.
     """
     # print(f"flat_x {flat_x}, flat_y {flat_y}")
-    # print(f"cal.int {cal.int_par.xh}, {cal.int_par.yh}")
-    flat_x += cal.int_par.xh
-    flat_y += cal.int_par.yh
+    xh, yh = _calibration_primary_point(cal)
+    flat_x += xh
+    flat_y += yh
 
     # print(f"flat_x {flat_x}, flat_y {flat_y}")
 
-    dist_x, dist_y = distort_brown_affine(flat_x, flat_y, cal.added_par)
+    dist_x, dist_y = distort_brown_affine(flat_x, flat_y, _calibration_added_par(cal))
     # print(f"dist_x {dist_x}, dist_y {dist_y}")
 
     return dist_x, dist_y
@@ -242,7 +278,8 @@ def flat_to_dist(flat_x: float, flat_y: float, cal: Calibration) -> Tuple[float,
 
 def dist_to_flat(dist_x: float, dist_y: float, cal: Calibration, tol: float = 1e-5):
     """Convert real-image coordinates to flat-image coordinates."""
-    flat_x, flat_y = correct_brown_affine(dist_x, dist_y, cal.added_par, tol)
-    flat_x -= cal.int_par.xh
-    flat_y -= cal.int_par.yh
+    xh, yh = _calibration_primary_point(cal)
+    flat_x, flat_y = correct_brown_affine(dist_x, dist_y, _calibration_added_par(cal), tol)
+    flat_x -= xh
+    flat_y -= yh
     return flat_x, flat_y

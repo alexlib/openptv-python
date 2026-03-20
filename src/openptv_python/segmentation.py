@@ -35,6 +35,48 @@ class Peak:
     n_touch: int = 0
 
 
+def _control_image_size(cpar: ControlPar) -> tuple[int, int]:
+    if hasattr(cpar, "get_image_size"):
+        return cpar.get_image_size()
+    return cpar.imx, cpar.imy
+
+
+def _target_thresholds(targ_par: TargetPar) -> list[int]:
+    if hasattr(targ_par, "get_grey_thresholds"):
+        return list(targ_par.get_grey_thresholds())
+    return list(targ_par.gvthresh)
+
+
+def _target_discont(targ_par: TargetPar) -> int:
+    if hasattr(targ_par, "get_max_discontinuity"):
+        return targ_par.get_max_discontinuity()
+    return targ_par.discont
+
+
+def _target_nn_bounds(targ_par: TargetPar) -> tuple[int, int]:
+    if hasattr(targ_par, "get_pixel_count_bounds"):
+        return targ_par.get_pixel_count_bounds()
+    return targ_par.nnmin, targ_par.nnmax
+
+
+def _target_nx_bounds(targ_par: TargetPar) -> tuple[int, int]:
+    if hasattr(targ_par, "get_xsize_bounds"):
+        return targ_par.get_xsize_bounds()
+    return targ_par.nxmin, targ_par.nxmax
+
+
+def _target_ny_bounds(targ_par: TargetPar) -> tuple[int, int]:
+    if hasattr(targ_par, "get_ysize_bounds"):
+        return targ_par.get_ysize_bounds()
+    return targ_par.nymin, targ_par.nymax
+
+
+def _target_min_sum_grey(targ_par: TargetPar) -> int:
+    if hasattr(targ_par, "get_min_sum_grey"):
+        return targ_par.get_min_sum_grey()
+    return targ_par.sumg_min
+
+
 def targ_rec(
     img: np.ndarray,
     targ_par: TargetPar,
@@ -46,12 +88,20 @@ def targ_rec(
     num_cam,
 ) -> List[Target]:
     """Target recognition function."""
+    imx, imy = _control_image_size(cpar)
+    thresholds = _target_thresholds(targ_par)
+    disco = _target_discont(targ_par)
+    nnmin, nnmax = _target_nn_bounds(targ_par)
+    nxmin, nxmax = _target_nx_bounds(targ_par)
+    nymin, nymax = _target_ny_bounds(targ_par)
+    sumg_min = _target_min_sum_grey(targ_par)
+
     if (
         should_use_native("target_recognition")
         and xmin <= 0
         and ymin <= 0
-        and xmax >= cpar.imx
-        and ymax >= cpar.imy
+        and xmax >= imx
+        and ymax >= imy
     ):
         native_tpar = to_native_target_par(targ_par)
         native_cpar = to_native_control_par(cpar)
@@ -64,13 +114,12 @@ def targ_rec(
             subrange_y=None,
         )
         targets = from_native_target_array(native_targets)
-        threshold = targ_par.gvthresh[int(num_cam)]
+        threshold = thresholds[int(num_cam)]
         for target in targets:
             target.sumg -= target.n * threshold
         return targets
 
-    thres = targ_par.gvthresh[num_cam]
-    disco = targ_par.discont
+    thres = thresholds[num_cam]
 
     # Make sure the min/max coordinates don't cause us to access memory
     # outside the image memory.
@@ -78,15 +127,10 @@ def targ_rec(
         xmin = 1
     if ymin <= 0:
         ymin = 1
-    if xmax >= cpar.imx:
-        xmax = cpar.imx - 1
-    if ymax >= cpar.imy:
-        ymax = cpar.imy - 1
-
-    nnmin, nnmax = targ_par.nnmin, targ_par.nnmax
-    nxmin, nxmax = targ_par.nxmin, targ_par.nxmax
-    nymin, nymax = targ_par.nymin, targ_par.nymax
-    sumg_min = targ_par.sumg_min
+    if xmax >= imx:
+        xmax = imx - 1
+    if ymax >= imy:
+        ymax = imy - 1
 
     pix = fast_targ_rec(
         img,
@@ -293,13 +337,18 @@ def peak_fit(
     num_cam: int,
 ) -> List[Target]:
     """Fit the peaks in the image to a gaussian."""
-    imx, imy = cpar.imx, cpar.imy
+    imx, imy = _control_image_size(cpar)
+    thresholds = _target_thresholds(targ_par)
+    disco = _target_discont(targ_par)
+    nnmin, nnmax = _target_nn_bounds(targ_par)
+    nxmin, nxmax = _target_nx_bounds(targ_par)
+    nymin, nymax = _target_ny_bounds(targ_par)
+    sumg_min = _target_min_sum_grey(targ_par)
     n_peaks = 0
     n_wait = 0
     x8, y8 = [0, 1, 0, -1], [1, 0, -1, 0]
     p2 = 0
-    thres = targ_par.gvthresh[num_cam]
-    disco = targ_par.discont
+    thres = thresholds[num_cam]
     intx1, inty1 = 0, 0
     unify = 0
     unified = 0
@@ -525,13 +574,13 @@ def peak_fit(
 
         if (
             peaks[i].unr == 0
-            and peaks[i].sumg > targ_par.sumg_min
-            and (peaks[i].xmax - peaks[i].xmin + 1) >= targ_par.nxmin
-            and (peaks[i].ymax - peaks[i].ymin + 1) >= targ_par.nymin
-            and (peaks[i].xmax - peaks[i].xmin) < targ_par.nxmax
-            and (peaks[i].ymax - peaks[i].ymin) < targ_par.nymax
-            and peaks[i].n >= targ_par.nnmin
-            and peaks[i].n <= targ_par.nnmax
+            and peaks[i].sumg > sumg_min
+            and (peaks[i].xmax - peaks[i].xmin + 1) >= nxmin
+            and (peaks[i].ymax - peaks[i].ymin + 1) >= nymin
+            and (peaks[i].xmax - peaks[i].xmin) < nxmax
+            and (peaks[i].ymax - peaks[i].ymin) < nymax
+            and peaks[i].n >= nnmin
+            and peaks[i].n <= nnmax
         ):
             sumg = peaks[i].sumg
 
@@ -641,14 +690,19 @@ def target_recognition(
     -------
     Number of  object holding the targets found.
     """
+    if hasattr(cparam, "get_image_size"):
+        imx, imy = cparam.get_image_size()
+    else:
+        imx, imy = cparam.imx, cparam.imy
+
     # Set the subrange (to default if not given):
     if subrange_x is None:
-        xmin, xmax = 0, cparam.imx
+        xmin, xmax = 0, imx
     else:
         xmin, xmax = subrange_x
 
     if subrange_y is None:
-        ymin, ymax = 0, cparam.imy
+        ymin, ymax = 0, imy
     else:
         ymin, ymax = subrange_y
 

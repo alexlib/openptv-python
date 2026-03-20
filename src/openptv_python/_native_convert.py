@@ -32,6 +32,9 @@ def _optv_parameters_module() -> ModuleType:
 
 
 def to_native_calibration(cal: Calibration):
+    if not isinstance(cal, Calibration):
+        return cal
+
     if not HAS_NATIVE_CALIBRATION or optv_calibration is None:
         raise RuntimeError("optv Calibration is not available")
 
@@ -49,6 +52,9 @@ def to_native_calibration(cal: Calibration):
 
 
 def to_native_control_par(cpar: ControlPar):
+    if not isinstance(cpar, ControlPar):
+        return cpar
+
     parameters_module = _optv_parameters_module()
 
     flags = [
@@ -83,6 +89,9 @@ def to_native_control_par(cpar: ControlPar):
 
 
 def to_native_target_par(tpar: TargetPar):
+    if not isinstance(tpar, TargetPar):
+        return tpar
+
     parameters_module = _optv_parameters_module()
 
     thresholds = list(tpar.gvthresh)
