@@ -241,6 +241,28 @@ def get_multimedia_par(control_params: Any) -> Any:
     return converted
 
 
+def get_image_size(control_params: Any) -> tuple[int, int]:
+    """Return the image size from either backend's control parameter object."""
+
+    getter = getattr(control_params, "get_image_size", None)
+    if callable(getter):
+        imx, imy = getter()
+        return int(imx), int(imy)
+
+    return int(getattr(control_params, "imx")), int(getattr(control_params, "imy"))
+
+
+def get_pixel_size(control_params: Any) -> tuple[float, float]:
+    """Return the pixel size from either backend's control parameter object."""
+
+    getter = getattr(control_params, "get_pixel_size", None)
+    if callable(getter):
+        pix_x, pix_y = getter()
+        return float(pix_x), float(pix_y)
+
+    return float(getattr(control_params, "pix_x")), float(getattr(control_params, "pix_y"))
+
+
 # Initialize once so the default preference is explicit and optv availability
 # is reported immediately in sessions where it is missing.
 set_engine(DEFAULT_ENGINE, warn_once=True)

@@ -10,6 +10,7 @@ from .epi import Candidate_dtype
 from .parameters import ControlPar, VolumePar
 from .tracking_frame_buf import Target
 from .trafo import correct_brown_affine
+from ._native_compat import get_image_size, get_pixel_size
 
 
 def find_candidate(
@@ -63,10 +64,13 @@ def find_candidate(
     # The image space is the image plane of the camera. The image space is
     # given in millimeters of sensor size and the origin is in the center of the sensor.
 
-    xmin = (-1) * cpar.pix_x * cpar.imx / 2
-    xmax = cpar.pix_x * cpar.imx / 2
-    ymin = (-1) * cpar.pix_y * cpar.imy / 2
-    ymax = cpar.pix_y * cpar.imy / 2
+    imx, imy = get_image_size(cpar)
+    pix_x, pix_y = get_pixel_size(cpar)
+
+    xmin = (-1) * pix_x * imx / 2
+    xmax = pix_x * imx / 2
+    ymin = (-1) * pix_y * imy / 2
+    ymax = pix_y * imy / 2
     xmin -= cal.int_par.xh
     ymin -= cal.int_par.yh
     xmax -= cal.int_par.xh
