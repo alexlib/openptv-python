@@ -60,6 +60,8 @@ if HAS_OPTV:
     from optv.parameters import TargetParams
     from optv.parameters import TrackingParams
     from optv.parameters import VolumeParams
+    from optv.correspondences import MatchedCoords
+    from optv.correspondences import correspondences as py_correspondences
     from optv.epipolar import epipolar_curve
     from optv.image_processing import preprocess_image
     from optv.imgcoord import image_coordinates
@@ -77,6 +79,7 @@ if HAS_OPTV:
         convert_arr_metric_to_pixel,
         convert_arr_pixel_to_metric,
     )
+    correspondences = py_correspondences
 else:
     from openptv_python.calibration import Calibration
     from openptv_python.parameters import ControlPar as ControlParams
@@ -99,11 +102,11 @@ else:
     from openptv_python.track import Tracker, default_naming
     from openptv_python.trafo import arr_pixel_to_metric as convert_arr_pixel_to_metric
     from openptv_python.trafo import arr_metric_to_pixel as convert_arr_metric_to_pixel
-from openptv_python.correspondences import (
-    MatchedCoords,
-    py_correspondences,
-    correspondences,
-)
+    from openptv_python.correspondences import (
+        MatchedCoords,
+        py_correspondences,
+        correspondences,
+    )
 from openptv_python.tracking_frame_buf import sort_target_y
 from openptv_python.imgcoord import img_coord
 
@@ -236,6 +239,7 @@ __all__ = [
     "Tracker",
     "MatchedCoords",
     "py_correspondences",
+    "correspondences",
     # Functions
     "preprocess_image",
     "target_recognition",

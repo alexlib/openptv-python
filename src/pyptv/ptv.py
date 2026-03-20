@@ -591,10 +591,8 @@ def py_correspondences_proc_c(exp, frame=DEFAULT_FRAME_NUM):
     short_file_bases = exp.target_filenames
     print(f"short_file_bases: {short_file_bases}")
     _ensure_target_output_writable(short_file_bases)
-    native_detections = bool(exp.detections) and type(exp.detections[0]).__module__.startswith("optv.")
-    if not native_detections:
-        for i_cam in range(exp.num_cams):
-            write_targets(exp.detections[i_cam], short_file_bases[i_cam], frame)
+    for i_cam in range(exp.num_cams):
+        write_targets(exp.detections[i_cam], short_file_bases[i_cam], frame)
         
     print(
         f"Frame {frame} had {[s.shape[1] for s in sorted_pos]!r} correspondences."
@@ -832,12 +830,17 @@ def py_sequence_loop(exp) -> None:
         flat = np.array(
             [corr.get_by_pnrs(corresp) for corr, corresp in zip(corrected, sorted_corresp)]
         )
-        legacy_cals = [from_native_calibration(cal) for cal in exp.cals]
-        legacy_cpar = _to_python_cpar(exp.cpar)
-        legacy_vpar = _to_python_vpar(exp.vpar)
+        if should_use_native("orientation"):
+            legacy_cals = exp.cals
+            legacy_cpar = exp.cpar
+            legacy_vpar = exp.vpar
+        else:
+            legacy_cals = [from_native_calibration(cal) for cal in exp.cals]
+            legacy_cpar = _to_python_cpar(exp.cpar)
+            legacy_vpar = _to_python_vpar(exp.vpar)
         pos, _ = point_positions(
             flat.transpose(1, 0, 2),
-            get_multimedia_par(legacy_cpar),
+            legacy_cpar,
             legacy_cals,
             legacy_vpar,
         )
@@ -983,18 +986,25 @@ def write_targets(targets: TargetArray, short_file_base: str, frame: int) -> boo
                 return target.sum_grey_value()
             return target.sumg
 
-        with open(output_path, "w", encoding="utf-8") as file:
-            file.write(f"{num_targets}\n")
-            for target in target_list:
-                pnr = int(_value(getattr(target, "pnr")))
-                x, y = _pos(target)
-                n, nx, ny = _pixel_counts(target)
-                sumg = int(_sum_grey_value(target))
-                tnr = int(_value(getattr(target, "tnr")))
-                file.write(
-                    f"{pnr:4d} {float(x):9.4f} {float(y):9.4f} "
-                    f"{int(n):5d} {int(nx):5d} {int(ny):5d} {sumg:5d} {tnr:5d}\n"
+        target_arr = np.array(
+            [
+                (
+                    _value(getattr(target, "pnr")),
+                    *_pos(target),
+                    *_pixel_counts(target),
+                    _sum_grey_value(target),
+                    _value(getattr(target, "tnr")),
                 )
+                for target in target_list
+            ]
+        )
+        np.savetxt(
+            output_path,
+            target_arr,
+            fmt="%4d %9.4f %9.4f %5d %5d %5d %5d %5d",
+            header=f"{num_targets}",
+            comments="",
+        )
         success = True
     except OSError as exc:
         _raise_output_write_error(output_path, exc)

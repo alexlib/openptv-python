@@ -145,6 +145,9 @@ class Target:
 
 def sort_target_y(targets: List[Target]) -> List[Target]:
     """Sort targets by y coordinate."""
+    if hasattr(targets, "sort_y") and callable(getattr(targets, "sort_y", None)):
+        targets.sort_y()
+        return targets
     return sorted(targets, key=lambda t: _target_pos(t)[1])
 
 

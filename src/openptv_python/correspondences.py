@@ -565,6 +565,33 @@ def py_correspondences(
     """
     num_cams = get_num_cams(cparam)
 
+    if should_use_native("correspondences") and HAS_NATIVE_CORRESPONDENCES and optv_correspondences is not None:
+        native_cals = [to_native_calibration(cal) for cal in calib]
+        native_vparam = to_native_volume_par(vparam)
+        native_cparam = to_native_control_par(cparam)
+        native_img_pts = [to_native_target_array(img_pts[cam]) for cam in range(num_cams)]
+        native_flat_coords = [
+            optv_correspondences.MatchedCoords(
+                native_img_pts[cam], native_cparam, native_cals[cam], 0.0001
+            )
+            for cam in range(num_cams)
+        ]
+
+        if num_cams == 1:
+            return optv_correspondences.single_cam_correspondence(
+                native_img_pts,
+                native_flat_coords,
+                native_cals,
+            )
+
+        return optv_correspondences.correspondences(
+            native_img_pts,
+            native_flat_coords,
+            native_cals,
+            native_vparam,
+            native_cparam,
+        )
+
     frm = Frame(num_cams, MAX_TARGETS)
 
     # Special case of a single camera, follow the single_cam_correspondence docstring
