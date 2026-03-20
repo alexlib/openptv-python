@@ -24,9 +24,17 @@ from .mask_gui import MaskGUI
 from .parameter_gui import Main_Params, Calib_Params, Tracking_Params
 from .__version__ import __version__
 from . import ptv
-from openptv_python.trafo import arr_metric_to_pixel as convert_arr_metric_to_pixel
-from openptv_python.epi import epipolar_curve
-from openptv_python.imgcoord import image_coordinates
+from ._backend import (
+    Calibration,
+    TargetArray,
+    convert_arr_metric_to_pixel,
+    epipolar_curve,
+    external_calibration,
+    full_calibration,
+    image_coordinates,
+    match_detection_to_ref,
+    target_recognition,
+)
 from .calibration_gui import CalibrationGUI
 
 """PyPTV_GUI is the GUI for the OpenPTV (www.openptv.net) written in

@@ -20,25 +20,27 @@ from imageio.v3 import imread
 from skimage.util import img_as_ubyte
 from skimage.color import rgb2gray
 
-from openptv_python.calibration import Calibration
-from openptv_python.correspondences import MatchedCoords, py_correspondences
-from openptv_python.imgcoord import image_coordinates
-from openptv_python.image_processing import preprocess_image
-from openptv_python.orientation import (
+from ._backend import (
+    Calibration,
+    ControlParams,
+    Frame,
+    MatchedCoords,
+    SequenceParams,
+    TargetArray,
+    TargetParams,
+    Tracker,
+    TrackingParams,
+    VolumeParams,
+    convert_arr_pixel_to_metric,
+    default_naming,
+    image_coordinates,
     multi_cam_point_positions,
     point_positions,
+    preprocess_image,
+    py_correspondences,
+    sort_target_y,
+    target_recognition,
 )
-from openptv_python.parameters import (
-    ControlPar as ControlParams,
-    SequencePar as SequenceParams,
-    TargetPar as TargetParams,
-    TrackPar as TrackingParams,
-    VolumePar as VolumeParams,
-)
-from openptv_python.trafo import arr_pixel_to_metric as convert_arr_pixel_to_metric
-from openptv_python.segmentation import target_recognition
-from openptv_python.track import Tracker, default_naming
-from openptv_python.tracking_frame_buf import Frame, TargetArray, sort_target_y
 
 """
 example from Tracker documentation: 
@@ -1016,8 +1018,6 @@ def full_scipy_calibration(
     cal: Calibration, XYZ: np.ndarray, targs: TargetArray, cpar: ControlParams, flags=[]
 ):
     """Full calibration using scipy.optimize"""
-    from openptv_python.trafo import arr_metric_to_pixel as convert_arr_metric_to_pixel
-
     def _residuals_k(x, cal, XYZ, xy, cpar):
         cal.set_radial_distortion(x)
         targets = convert_arr_metric_to_pixel(
@@ -1146,8 +1146,6 @@ def dumbbell_target_func(targets, cpar, calibs, db_length, db_weight):
     float
         The weighted ray convergence + length error measure.
     """
-    from openptv_python.orientation import multi_cam_point_positions
-
     num_cams = cpar.get_num_cams()
     num_targs = targets.shape[1]
     multimed_pars = cpar.get_multimedia_params()
@@ -1202,8 +1200,6 @@ def dumbbell_target_func(targets, cpar, calibs, db_length, db_weight):
 
 def dumbbell_target_residuals(targets, cpar, calibs, db_length, db_weight):
     """Return residuals per target pair for least-squares optimization."""
-    from openptv_python.orientation import multi_cam_point_positions
-
     num_targs = targets.shape[1]
     if num_targs % 2 != 0:
         raise ValueError("Number of targets must be even for dumbbell calibration")
@@ -1242,8 +1238,6 @@ def dumbbell_ba_residuals(
     calib_vec packs active camera extrinsics and per-frame 3D endpoints.
     targets is shaped (num_cams, num_frames, 2, 2) in metric coordinates.
     """
-    from openptv_python.imgcoord import image_coordinates
-
     if db_length <= 0:
         raise ValueError("Dumbbell length must be positive")
     if db_weight < 0:
@@ -1473,8 +1467,6 @@ def calib_dumbbell(cal_gui)-> None:
     metric_by_cam = np.array(metric_by_cam)
 
     if db_eps > 0:
-        from openptv_python.orientation import multi_cam_point_positions
-
         keep_mask = np.ones(num_frames, dtype=bool)
         removed = 0
         for frame_idx in range(num_frames):
@@ -1497,9 +1489,6 @@ def calib_dumbbell(cal_gui)-> None:
             raise ValueError("All frames filtered by dumbbell length eps")
 
     def _print_camera_residuals(label: str, metric_targets: np.ndarray) -> None:
-        from openptv_python.orientation import multi_cam_point_positions
-        from openptv_python.imgcoord import image_coordinates
-
         num_cams_local, num_frames_local, num_targs_local, _ = metric_targets.shape
         sums = np.zeros(num_cams_local, dtype=float)
         counts = np.zeros(num_cams_local, dtype=int)
@@ -1562,8 +1551,6 @@ def calib_dumbbell(cal_gui)-> None:
     calib_vec = calib_vec.flatten()
 
     def _init_dumbbell_points(metric_targets: np.ndarray) -> np.ndarray:
-        from openptv_python.orientation import multi_cam_point_positions
-
         num_cams_local, num_frames_local, _, _ = metric_targets.shape
         points = np.zeros((num_frames_local, 2, 3), dtype=float)
 
@@ -1682,8 +1669,6 @@ def calib_dumbbell(cal_gui)-> None:
 
 def calib_particles(exp):
     """Calibration with particles."""
-
-    from openptv_python.tracking_frame_buf import Frame
     
     # Handle both Experiment objects and MainGUI objects
     if hasattr(exp, 'pm'):
@@ -1781,14 +1766,19 @@ def calib_particles(exp):
 
 def clone_calibration(calibration_obj):
     """Return a copy of a Calibration object using all get/set methods."""
-    from openptv_python.calibration import Calibration
     import numpy as np
-    new_cal = Calibration()
+    new_cal = calibration_obj.__class__()
     new_cal.set_pos(np.array(calibration_obj.get_pos()))
     new_cal.set_angles(np.array(calibration_obj.get_angles()))
     new_cal.set_primary_point(np.array(calibration_obj.get_primary_point()))
     new_cal.set_radial_distortion(np.array(calibration_obj.get_radial_distortion()))
     new_cal.set_decentering(np.array(calibration_obj.get_decentering()))
-    new_cal.set_affine_trans(np.array(calibration_obj.get_affine()))
+    affine = np.array(calibration_obj.get_affine())
+    if hasattr(new_cal, "set_affine_trans"):
+        new_cal.set_affine_trans(affine)
+    elif hasattr(new_cal, "set_affine_distortion"):
+        new_cal.set_affine_distortion(affine)
+    else:
+        raise AttributeError("Calibration object does not support affine setters")
     new_cal.set_glass_vec(np.array(calibration_obj.get_glass_vec()))
     return new_cal

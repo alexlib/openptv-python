@@ -51,7 +51,11 @@ from openptv_python.parameters import TrackPar as TrackingParams
 from openptv_python.parameters import VolumePar as VolumeParams
 from openptv_python.image_processing import preprocess_image
 from openptv_python.segmentation import target_recognition
-from openptv_python.correspondences import correspondences, MatchedCoords
+from openptv_python.correspondences import (
+    MatchedCoords,
+    py_correspondences,
+    correspondences,
+)
 from openptv_python.orientation import (
     point_positions,
     multi_cam_point_positions,
@@ -59,7 +63,7 @@ from openptv_python.orientation import (
     full_calibration,
     match_detection_to_ref,
 )
-from openptv_python.tracking_frame_buf import TargetArray, Target, Frame
+from openptv_python.tracking_frame_buf import TargetArray, Target, Frame, sort_target_y
 from openptv_python.track import Tracker, default_naming
 from openptv_python.trafo import arr_pixel_to_metric as convert_arr_pixel_to_metric
 from openptv_python.trafo import arr_metric_to_pixel as convert_arr_metric_to_pixel
@@ -167,6 +171,7 @@ __all__ = [
     "Frame",
     "Tracker",
     "MatchedCoords",
+    "py_correspondences",
     # Functions
     "preprocess_image",
     "target_recognition",
@@ -174,6 +179,7 @@ __all__ = [
     "point_positions",
     "multi_cam_point_positions",
     "default_naming",
+    "sort_target_y",
     "convert_arr_pixel_to_metric",
     "convert_arr_metric_to_pixel",
     "image_coordinates",

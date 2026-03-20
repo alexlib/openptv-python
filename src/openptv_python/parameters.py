@@ -451,25 +451,49 @@ class VolumePar(Parameters):
         """Set the refractive index."""
         self.cn = cn
 
+    def get_cn(self) -> float:
+        """Return the refractive index."""
+        return self.cn
+
     def set_cnx(self, cnx: float) -> None:
         """Set the refractive index in x direction."""
         self.cnx = cnx
+
+    def get_cnx(self) -> float:
+        """Return the refractive index in x direction."""
+        return self.cnx
 
     def set_cny(self, cny: float) -> None:
         """Set the refractive index in y direction."""
         self.cny = cny
 
+    def get_cny(self) -> float:
+        """Return the refractive index in y direction."""
+        return self.cny
+
     def set_csumg(self, csumg: float) -> None:
         """Set the maximum sum of the gradient."""
         self.csumg = csumg
+
+    def get_csumg(self) -> float:
+        """Return the maximum sum of the gradient."""
+        return self.csumg
 
     def set_eps0(self, eps0: float) -> None:
         """Set the maximum sum of the gradient."""
         self.eps0 = eps0
 
+    def get_eps0(self) -> float:
+        """Return the maximum epipolar distance."""
+        return self.eps0
+
     def set_corrmin(self, corrmin: float):
         """Set the minimum correlation value of all criteria."""
         self.corrmin = corrmin
+
+    def get_corrmin(self) -> float:
+        """Return the minimum correlation value of all criteria."""
+        return self.corrmin
 
     def get_X_lay(self) -> list[float]:
         """Legacy getter for x-layer bounds."""
