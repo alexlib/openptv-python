@@ -6,13 +6,13 @@ import os
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 from optv.correspondences import MatchedCoords
+from openptv_python.parameters import ControlPar, VolumePar
 from pyptv.ptv import (
     _read_calibrations, generate_short_file_bases, py_pre_processing_c, py_determination_proc_c,
     run_sequence_plugin, run_tracking_plugin, py_sequence_loop,
     py_trackcorr_init
 )
 from pyptv.experiment import Experiment
-from optv.parameters import ControlParams
 from optv.calibration import Calibration
 
 
@@ -182,8 +182,8 @@ class TestPyDeterminationProcC:
         sorted_corresp = [np.array([[0]])]
         corrected = [Mock()]
         corrected[0].get_by_pnrs.return_value = np.array([[1.0, 2.0]])
-        cpar = Mock(spec=ControlParams)
-        vpar = Mock()
+        cpar = ControlPar(num_cams=1, img_base_name=['cam1'], cal_img_base_name=['cam1'])
+        vpar = VolumePar()
         cals = [Calibration()]
         mock_point_positions.return_value = (np.array([[1.0, 2.0, 3.0]]), None)
 
@@ -220,8 +220,8 @@ class TestPyDeterminationProcC:
         sorted_pos = [np.array([[1.0, 2.0], [3.0, 4.0]])]
         sorted_corresp = [np.array([[0, 1]])]
         corrected = [Mock()]
-        cpar = Mock(spec=ControlParams)
-        vpar = Mock()
+        cpar = ControlPar(num_cams=2, img_base_name=['cam1', 'cam2'], cal_img_base_name=['cam1', 'cam2'])
+        vpar = VolumePar()
         cals = []  # Empty calibrations
         
         with pytest.raises((IndexError, ValueError)):

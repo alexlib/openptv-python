@@ -4,6 +4,7 @@ import pytest
 import numpy as np
 from pathlib import Path
 from unittest.mock import Mock, patch, mock_open
+from openptv_python.parameters import ControlPar, VolumePar
 from pyptv.ptv import (
     _ensure_directory_writable,
     _ensure_target_output_writable,
@@ -169,10 +170,10 @@ class TestCorrespondenceWritePreflight:
     def test_correspondences_checks_target_directory_before_writing(self):
         exp = Mock()
         exp.detections = [Mock()]
-        exp.corrected = Mock()
-        exp.cals = Mock()
-        exp.vpar = Mock()
-        exp.cpar = Mock()
+        exp.corrected = [Mock()]
+        exp.cals = [Mock()]
+        exp.vpar = VolumePar()
+        exp.cpar = ControlPar(num_cams=1, img_base_name=['cam1'], cal_img_base_name=['cam1'])
         exp.num_cams = 1
         exp.target_filenames = ['cam1']
 

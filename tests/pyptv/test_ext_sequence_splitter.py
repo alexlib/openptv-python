@@ -2,14 +2,20 @@
 
 import sys
 import subprocess
+import shutil
 from pathlib import Path
 
 
-def test_ext_sequence_splitter():
+def _copy_splitter_case(tmp_path):
+    source = Path(__file__).parent.parent / "testing_folder" / "test_splitter"
+    destination = tmp_path / "test_splitter"
+    shutil.copytree(source, destination, dirs_exist_ok=True)
+    return destination
+
+
+def test_ext_sequence_splitter(tmp_path):
     """Test the ext_sequence_splitter plugin using batch command (proven working approach)"""
-    
-    # Path to the test data (in tests/ directory)
-    test_path = copy_test_case("test_splitter")
+    test_path = _copy_splitter_case(tmp_path)
     
     if not test_path.exists():
         print(f"❌ Test data not found: {test_path}")
@@ -84,12 +90,12 @@ def test_ext_sequence_splitter():
         return False
 
 
-def test_batch_command():
+def test_batch_command(tmp_path):
     """Test using the batch command line interface"""
     
     # Fix paths for running from tests/ directory
     script_path = Path(__file__).parent.parent / "pyptv" / "pyptv_batch_plugins.py"
-    test_exp_path = copy_test_case("test_splitter")
+    test_exp_path = _copy_splitter_case(tmp_path)
     
     if not script_path.exists():
         print(f"❌ Batch script not found: {script_path}")

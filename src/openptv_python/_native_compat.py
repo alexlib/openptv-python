@@ -101,6 +101,17 @@ if optv_parameters is not None:
         _install_property_alias(volume_params_cls, "corrmin", "get_corrmin", "set_corrmin")
         _install_property_alias(volume_params_cls, "eps0", "get_eps0", "set_eps0")
 
+    tracking_params_cls = getattr(optv_parameters, "TrackingParams", None)
+    if tracking_params_cls is not None:
+        _install_property_alias(tracking_params_cls, "dvxmin", "get_dvxmin", "set_dvxmin")
+        _install_property_alias(tracking_params_cls, "dvxmax", "get_dvxmax", "set_dvxmax")
+        _install_property_alias(tracking_params_cls, "dvymin", "get_dvymin", "set_dvymin")
+        _install_property_alias(tracking_params_cls, "dvymax", "get_dvymax", "set_dvymax")
+        _install_property_alias(tracking_params_cls, "dvzmin", "get_dvzmin", "set_dvzmin")
+        _install_property_alias(tracking_params_cls, "dvzmax", "get_dvzmax", "set_dvzmax")
+        _install_property_alias(tracking_params_cls, "dangle", "get_dangle", "set_dangle")
+        _install_property_alias(tracking_params_cls, "add", "get_add", "set_add")
+
 
 def _emit_engine_warning(reason: str) -> None:
     global _ENGINE_WARNING_EMITTED

@@ -23,6 +23,52 @@ from .parameters import (
 )
 
 
+def _tracking_param_value(tpar, name: str):
+    """Read a tracking parameter from either attribute or getter access."""
+    value = getattr(tpar, name, None)
+    if value is not None:
+        return value
+
+    getter = getattr(tpar, f"get_{name}", None)
+    if callable(getter):
+        return getter()
+
+    raise AttributeError(f"TrackingParams object does not expose {name}")
+
+
+def _volume_param_value(vpar, name: str):
+    """Read a volume parameter from either attribute or legacy getter access."""
+    value = getattr(vpar, name, None)
+    if value is not None:
+        return value
+
+    getter_name = {
+        "x_lay": "get_X_lay",
+        "z_min_lay": "get_Zmin_lay",
+        "z_max_lay": "get_Zmax_lay",
+    }.get(name, f"get_{name}")
+    getter = getattr(vpar, getter_name, None)
+    if callable(getter):
+        return getter()
+
+    raise AttributeError(f"VolumeParams object does not expose {name}")
+
+
+def _set_volume_param_value(vpar, name: str, value) -> None:
+    """Write a volume parameter through either a setter or direct attribute."""
+    setter_name = {
+        "x_lay": "set_X_lay",
+        "z_min_lay": "set_Zmin_lay",
+        "z_max_lay": "set_Zmax_lay",
+    }.get(name, f"set_{name}")
+    setter = getattr(vpar, setter_name, None)
+    if callable(setter):
+        setter(value)
+        return
+
+    setattr(vpar, name, value)
+
+
 @dataclass
 class TrackingRun:
     """A tracking run."""
@@ -61,6 +107,14 @@ class TrackingRun:
         self.cal = cal
         self.flatten_tol = flatten_tol
 
+        if hasattr(seq_par, "img_base_name"):
+            img_base_names = seq_par.img_base_name
+        else:
+            img_base_names = [
+                seq_par.get_img_base_name(cam_index)
+                for cam_index in range(get_num_cams(cpar))
+            ]
+
         self.fb = FrameBuf(
             buf_len,
             get_num_cams(cpar),
@@ -68,33 +122,41 @@ class TrackingRun:
             corres_file_base,
             linkage_file_base,
             prio_file_base,
-            seq_par.img_base_name,
+            img_base_names,
         )
 
         self.lmax = math.sqrt(
-            (tpar.dvxmin - tpar.dvxmax) ** 2
-            + (tpar.dvymin - tpar.dvymax) ** 2
-            + (tpar.dvzmin - tpar.dvzmax) ** 2
+            (_tracking_param_value(tpar, "dvxmin") - _tracking_param_value(tpar, "dvxmax")) ** 2
+            + (_tracking_param_value(tpar, "dvymin") - _tracking_param_value(tpar, "dvymax")) ** 2
+            + (_tracking_param_value(tpar, "dvzmin") - _tracking_param_value(tpar, "dvzmax")) ** 2
         )
 
+        x_lay = list(_volume_param_value(vpar, "x_lay"))
+        z_min_lay = list(_volume_param_value(vpar, "z_min_lay"))
+        z_max_lay = list(_volume_param_value(vpar, "z_max_lay"))
+
         (
-            vpar.x_lay[1],
-            vpar.x_lay[0],
+            x_lay[1],
+            x_lay[0],
             self.ymax,
             self.ymin,
-            vpar.z_max_lay[1],
-            vpar.z_min_lay[0],
+            z_max_lay[1],
+            z_min_lay[0],
         ) = volumedimension(
-            vpar.x_lay[1],
-            vpar.x_lay[0],
+            x_lay[1],
+            x_lay[0],
             self.ymax,
             self.ymin,
-            vpar.z_max_lay[1],
-            vpar.z_min_lay[0],
+            z_max_lay[1],
+            z_min_lay[0],
             vpar,
             cpar,
             cal,
         )
+
+        _set_volume_param_value(vpar, "x_lay", x_lay)
+        _set_volume_param_value(vpar, "z_min_lay", z_min_lay)
+        _set_volume_param_value(vpar, "z_max_lay", z_max_lay)
 
         self.npart = 0
         self.nlinks = 0

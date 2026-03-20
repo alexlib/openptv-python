@@ -12,6 +12,7 @@ from .parameters import (
 )
 from .ray_tracing import ray_tracing
 from .trafo import correct_brown_affine, pixel_to_metric
+from .trafo import _calibration_added_par
 from .vec_utils import vec_norm
 
 
@@ -408,26 +409,45 @@ def volumedimension(
 ) -> Tuple[float, float, float, float, float, float]:
     """Calculate the volume dimensions."""
     mm = get_multimedia_par(cpar)
-    xc = [0.0, cpar.imx]
-    yc = [0.0, cpar.imy]
+    if hasattr(cpar, "imx") and hasattr(cpar, "imy"):
+        imx = cpar.imx
+        imy = cpar.imy
+    else:
+        imx, imy = cpar.get_image_size()
 
-    z_min = vpar.z_min_lay[0]
-    z_max = vpar.z_max_lay[0]
+    xc = [0.0, imx]
+    yc = [0.0, imy]
 
-    if vpar.z_min_lay[1] < z_min:
-        z_min = vpar.z_min_lay[1]
-    if vpar.z_max_lay[1] > z_max:
-        z_max = vpar.z_max_lay[1]
+    if hasattr(vpar, "z_min_lay") and hasattr(vpar, "z_max_lay"):
+        z_min_lay = vpar.z_min_lay
+        z_max_lay = vpar.z_max_lay
+    else:
+        z_min_lay = vpar.get_Zmin_lay()
+        z_max_lay = vpar.get_Zmax_lay()
+
+    z_min = z_min_lay[0]
+    z_max = z_max_lay[0]
+
+    if z_min_lay[1] < z_min:
+        z_min = z_min_lay[1]
+    if z_max_lay[1] > z_max:
+        z_max = z_max_lay[1]
 
     for i_cam in range(get_num_cams(cpar)):
+        if hasattr(cal[i_cam], "int_par"):
+            xh = cal[i_cam].int_par.xh
+            yh = cal[i_cam].int_par.yh
+        else:
+            xh, yh, _ = cal[i_cam].get_primary_point()
+
         for i in range(2):
             for j in range(2):
                 x, y = pixel_to_metric(xc[i], yc[j], cpar)
 
-                x -= cal[i_cam].int_par.xh
-                y -= cal[i_cam].int_par.yh
+                x -= xh
+                y -= yh
 
-                x, y = correct_brown_affine(x, y, cal[i_cam].added_par)
+                x, y = correct_brown_affine(x, y, _calibration_added_par(cal[i_cam]))
 
                 pos, a = ray_tracing(x, y, cal[i_cam], mm)
 

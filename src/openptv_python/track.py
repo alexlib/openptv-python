@@ -1345,6 +1345,30 @@ default_naming = {
 }
 
 
+def _sequence_first(seq_par: SequencePar) -> int:
+    value = getattr(seq_par, "first", None)
+    if value is not None:
+        return int(value)
+
+    getter = getattr(seq_par, "get_first", None)
+    if callable(getter):
+        return int(getter())
+
+    raise AttributeError("SequenceParams object does not expose first")
+
+
+def _sequence_last(seq_par: SequencePar) -> int:
+    value = getattr(seq_par, "last", None)
+    if value is not None:
+        return int(value)
+
+    getter = getattr(seq_par, "get_last", None)
+    if callable(getter):
+        return int(getter())
+
+    raise AttributeError("SequenceParams object does not expose last")
+
+
 class Tracker:
     """Compatibility wrapper for the legacy Tracker workflow."""
 
@@ -1374,16 +1398,16 @@ class Tracker:
             cals,
             flatten_tol,
         )
-        self.step = self.run_info.seq_par.first
+        self.step = _sequence_first(self.run_info.seq_par)
 
     def restart(self):
         """Prepare a tracking run."""
-        self.step = self.run_info.seq_par.first
+        self.step = _sequence_first(self.run_info.seq_par)
         track_forward_start(self.run_info)
 
     def step_forward(self):
         """Perform one tracking step for the current frame."""
-        if self.step >= self.run_info.seq_par.last:
+        if self.step >= _sequence_last(self.run_info.seq_par):
             return False
 
         trackcorr_c_loop(self.run_info, self.step)
