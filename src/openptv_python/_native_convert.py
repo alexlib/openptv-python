@@ -55,23 +55,26 @@ def from_native_calibration(calibration_obj):
     if isinstance(calibration_obj, Calibration):
         return calibration_obj
 
-    converted = Calibration()
-    converted.set_pos(np.array(calibration_obj.get_pos()))
-    converted.set_angles(np.array(calibration_obj.get_angles()))
-    converted.set_primary_point(np.array(calibration_obj.get_primary_point()))
-    converted.set_radial_distortion(np.array(calibration_obj.get_radial_distortion()))
-    converted.set_decentering(np.array(calibration_obj.get_decentering()))
+    try:
+        converted = Calibration()
+        converted.set_pos(np.array(calibration_obj.get_pos()))
+        converted.set_angles(np.array(calibration_obj.get_angles()))
+        converted.set_primary_point(np.array(calibration_obj.get_primary_point()))
+        converted.set_radial_distortion(np.array(calibration_obj.get_radial_distortion()))
+        converted.set_decentering(np.array(calibration_obj.get_decentering()))
 
-    affine = np.array(calibration_obj.get_affine())
-    if hasattr(converted, "set_affine_trans"):
-        converted.set_affine_trans(affine)
-    elif hasattr(converted, "set_affine_distortion"):
-        converted.set_affine_distortion(affine)
-    else:
-        raise AttributeError("Calibration object does not support affine setters")
+        affine = np.array(calibration_obj.get_affine())
+        if hasattr(converted, "set_affine_trans"):
+            converted.set_affine_trans(affine)
+        elif hasattr(converted, "set_affine_distortion"):
+            converted.set_affine_distortion(affine)
+        else:
+            raise AttributeError("Calibration object does not support affine setters")
 
-    converted.set_glass_vec(np.array(calibration_obj.get_glass_vec()))
-    return converted
+        converted.set_glass_vec(np.array(calibration_obj.get_glass_vec()))
+        return converted
+    except (TypeError, ValueError, AttributeError):
+        return calibration_obj
 
 
 def to_native_control_par(cpar: ControlPar):

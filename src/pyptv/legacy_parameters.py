@@ -765,7 +765,7 @@ class TrackingParams(Parameters):
             f.write("%g\n" % self.dvzmin)
             f.write("%g\n" % self.dvzmax)
             f.write("%g\n" % self.angle)
-            f.write("%g\n" % self.dacc)
+            f.write(f"{self.dacc}\n")
             f.write("%d\n" % self.flagNewParticles)
             f.close()
             return True

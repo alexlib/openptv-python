@@ -68,6 +68,40 @@ HAS_NATIVE_TARGETS = optv_tracking_framebuf is not None and hasattr(
 )
 
 
+def _install_property_alias(cls: Any, attr_name: str, getter_name: str, setter_name: str | None = None) -> None:
+    if hasattr(cls, attr_name):
+        return
+
+    def getter(self):
+        getter = getattr(self, getter_name)
+        return getter()
+
+    def setter(self, value):
+        if setter_name is None:
+            raise AttributeError(f"{attr_name} is read-only")
+        setter = getattr(self, setter_name)
+        return setter(value)
+
+    try:
+        setattr(cls, attr_name, property(getter, None if setter_name is None else setter))
+    except (TypeError, AttributeError):
+        return
+
+
+if optv_parameters is not None:
+    volume_params_cls = getattr(optv_parameters, "VolumeParams", None)
+    if volume_params_cls is not None:
+        _install_property_alias(volume_params_cls, "x_lay", "get_X_lay", "set_X_lay")
+        _install_property_alias(volume_params_cls, "z_min_lay", "get_Zmin_lay", "set_Zmin_lay")
+        _install_property_alias(volume_params_cls, "z_max_lay", "get_Zmax_lay", "set_Zmax_lay")
+        _install_property_alias(volume_params_cls, "cn", "get_cn", "set_cn")
+        _install_property_alias(volume_params_cls, "cnx", "get_cnx", "set_cnx")
+        _install_property_alias(volume_params_cls, "cny", "get_cny", "set_cny")
+        _install_property_alias(volume_params_cls, "csumg", "get_csumg", "set_csumg")
+        _install_property_alias(volume_params_cls, "corrmin", "get_corrmin", "set_corrmin")
+        _install_property_alias(volume_params_cls, "eps0", "get_eps0", "set_eps0")
+
+
 def _emit_engine_warning(reason: str) -> None:
     global _ENGINE_WARNING_EMITTED
     if _ENGINE_WARNING_EMITTED:

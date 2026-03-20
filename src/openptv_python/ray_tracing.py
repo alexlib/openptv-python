@@ -44,12 +44,26 @@ def ray_tracing(
     -------
             _type_: _description_
     """
-    primary_point = np.r_[cal.ext_par.x0, cal.ext_par.y0, cal.ext_par.z0]
-    glass = np.ascontiguousarray(cal.glass_par)
-    camera = np.array([x, y, -cal.int_par.cc], dtype=np.float64, order="C")
+    if hasattr(cal, "get_primary_point"):
+        primary_point = np.asarray(cal.get_primary_point(), dtype=np.float64)
+    else:
+        primary_point = np.r_[cal.ext_par.x0, cal.ext_par.y0, cal.ext_par.z0]
+
+    if hasattr(cal, "get_rotation_matrix"):
+        distortion_matrix = np.asarray(cal.get_rotation_matrix(), dtype=np.float64)
+    else:
+        distortion_matrix = np.asarray(cal.ext_par.dm, dtype=np.float64)
+
+    if hasattr(cal, "get_glass_vec"):
+        glass = np.ascontiguousarray(cal.get_glass_vec())
+    else:
+        glass = np.ascontiguousarray(cal.glass_par)
+
+    camera_cc = float(primary_point[2]) if primary_point.shape[0] >= 3 else float(cal.int_par.cc)
+    camera = np.array([x, y, -camera_cc], dtype=np.float64, order="C")
     return fast_ray_tracing(
         camera,
-        cal.ext_par.dm,
+        distortion_matrix,
         primary_point,
         glass,
         mm.d[0],

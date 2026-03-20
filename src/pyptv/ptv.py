@@ -182,7 +182,7 @@ def _populate_cpar(ptv_params: dict, num_cams: int) -> ControlParams:
     if len([x for x in img_cal_list if x is not None]) < num_cams:
         raise ValueError("img_cal_list is too short")
     
-    cpar = PythonControlPar(num_cams)
+    cpar = ControlParams(num_cams)
     # Set required parameters directly from the dictionary, no defaults
     cpar.set_image_size((ptv_params['imx'], ptv_params['imy']))
     cpar.set_pixel_size((ptv_params['pix_x'], ptv_params['pix_y']))
@@ -221,9 +221,9 @@ def _populate_spar(seq_params: dict, num_cams: int) -> SequenceParams:
         raise ValueError(f"base_name_list length ({len(base_name_list)}) does not match num_cams ({num_cams})")
 
     try:
-        spar = PythonSequencePar(num_cams=num_cams)
+        spar = SequenceParams(num_cams=num_cams)
     except TypeError:
-        spar = PythonSequencePar()
+        spar = SequenceParams()
         spar.set_img_base_name(["" for _ in range(num_cams)])
     spar.set_first(seq_params['first'])
     spar.set_last(seq_params['last'])
@@ -239,7 +239,7 @@ def _populate_spar(seq_params: dict, num_cams: int) -> SequenceParams:
 
 def _populate_vpar(crit_params: dict) -> VolumeParams:
     """Populate a VolumeParams object from a dictionary."""
-    vpar = PythonVolumePar()
+    vpar = VolumeParams()
     vpar.set_X_lay(crit_params['X_lay'])
     vpar.set_Zmin_lay(crit_params['Zmin_lay'])
     vpar.set_Zmax_lay(crit_params['Zmax_lay'])
@@ -267,7 +267,7 @@ def _populate_track_par(track_params: dict) -> TrackingParams:
         raise ValueError(f"Missing required tracking parameters: {missing_params}. "
                         f"Available parameters: {list(track_params.keys())}")
     
-    track_par = PythonTrackPar()
+    track_par = TrackingParams()
 
     assignments = {
         'dvxmin': track_params['dvxmin'],
@@ -296,7 +296,7 @@ def _populate_tpar(targ_params: dict, num_cams: int) -> TargetParams:
     # Get global num_cams - the single source of truth
     # num_cams = params.get('num_cams', 0)
     
-    tpar = PythonTargetPar()
+    tpar = TargetParams()
     # Handle both 'targ_rec' and 'detect_plate' parameter variants
     if 'targ_rec' in targ_params:
         params = targ_params['targ_rec']
@@ -335,6 +335,94 @@ def _populate_tpar(targ_params: dict, num_cams: int) -> TargetParams:
     else:
         raise ValueError("Target parameters must contain either 'targ_rec' or 'detect_plate' section.")
     return tpar
+
+
+def _to_python_cpar(cpar: ControlParams) -> PythonControlPar:
+    if isinstance(cpar, PythonControlPar):
+        return cpar
+
+    legacy = PythonControlPar(getattr(cpar, "get_num_cams", lambda: cpar.num_cams)())
+    if hasattr(cpar, "get_image_size"):
+        legacy.set_image_size(cpar.get_image_size())
+    else:
+        legacy.set_image_size((cpar.imx, cpar.imy))
+
+    if hasattr(cpar, "get_pixel_size"):
+        legacy.set_pixel_size(cpar.get_pixel_size())
+    else:
+        legacy.set_pixel_size((cpar.pix_x, cpar.pix_y))
+
+    if hasattr(cpar, "get_hp_flag"):
+        legacy.set_hp_flag(cpar.get_hp_flag())
+    else:
+        legacy.set_hp_flag(cpar.hp_flag)
+
+    if hasattr(cpar, "get_allCam_flag"):
+        legacy.set_allCam_flag(cpar.get_allCam_flag())
+    else:
+        legacy.set_allCam_flag(cpar.all_cam_flag)
+
+    if hasattr(cpar, "get_tiff_flag"):
+        legacy.set_tiff_flag(cpar.get_tiff_flag())
+    else:
+        legacy.set_tiff_flag(cpar.tiff_flag)
+
+    if hasattr(cpar, "get_chfield"):
+        legacy.set_chfield(cpar.get_chfield())
+    else:
+        legacy.set_chfield(cpar.chfield)
+
+    mm = get_multimedia_par(cpar)
+    if hasattr(legacy, "get_multimedia_params"):
+        legacy_mm = legacy.get_multimedia_params()
+        if hasattr(mm, "get_n1"):
+            legacy_mm.set_n1(mm.get_n1())
+        if hasattr(mm, "get_n2") and hasattr(mm, "get_d"):
+            legacy_mm.set_layers([mm.get_n2()[0]], [mm.get_d()[0]])
+        if hasattr(mm, "get_n3"):
+            legacy_mm.set_n3(mm.get_n3())
+
+    if hasattr(cpar, "get_cal_img_base_name"):
+        for cam_index in range(legacy.get_num_cams()):
+            legacy.set_cal_img_base_name(cam_index, cpar.get_cal_img_base_name(cam_index))
+    elif hasattr(cpar, "cal_img_base_name"):
+        for cam_index, base_name in enumerate(cpar.cal_img_base_name):
+            legacy.set_cal_img_base_name(cam_index, base_name)
+
+    if hasattr(cpar, "img_base_name"):
+        legacy.img_base_name = list(cpar.img_base_name)
+
+    return legacy
+
+
+def _to_python_vpar(vpar: VolumeParams) -> PythonVolumePar:
+    if isinstance(vpar, PythonVolumePar):
+        return vpar
+
+    legacy = PythonVolumePar()
+    if hasattr(vpar, "get_X_lay"):
+        legacy.set_X_lay(list(vpar.get_X_lay()))
+    else:
+        legacy.set_X_lay(list(vpar.x_lay))
+
+    if hasattr(vpar, "get_Zmin_lay"):
+        legacy.set_Zmin_lay(list(vpar.get_Zmin_lay()))
+    else:
+        legacy.set_Zmin_lay(list(vpar.z_min_lay))
+
+    if hasattr(vpar, "get_Zmax_lay"):
+        legacy.set_Zmax_lay(list(vpar.get_Zmax_lay()))
+    else:
+        legacy.set_Zmax_lay(list(vpar.z_max_lay))
+
+    for attr_name in ("eps0", "cn", "cnx", "cny", "csumg", "corrmin"):
+        getter_name = f"get_{attr_name}"
+        if hasattr(vpar, getter_name):
+            setattr(legacy, attr_name, getattr(vpar, getter_name)())
+        else:
+            setattr(legacy, attr_name, getattr(vpar, attr_name))
+
+    return legacy
 
 def _read_calibrations(cpar: ControlParams, num_cams: int) -> List[Calibration]:
     """Read calibration files for all cameras.
@@ -404,7 +492,7 @@ def py_start_proc_c(
 
         epar = params.get('examine')
         
-        cals = [from_native_calibration(cal) for cal in _read_calibrations(cpar, num_cams)]
+        cals = _read_calibrations(cpar, num_cams)
 
         return cpar, spar, vpar, track_par, tpar, cals, epar
 
@@ -480,12 +568,15 @@ def py_detection_proc_c(
 def py_correspondences_proc_c(exp, frame=DEFAULT_FRAME_NUM):
     """Provides correspondences
     """
+    legacy_cals = [from_native_calibration(cal) for cal in exp.cals]
+    legacy_cpar = _to_python_cpar(exp.cpar)
+    legacy_vpar = _to_python_vpar(exp.vpar)
     sorted_pos, sorted_corresp, num_targs = correspondences(
         exp.detections,
         exp.corrected,
-        exp.cals,
-        exp.vpar,
-        exp.cpar,
+        legacy_cals,
+        legacy_vpar,
+        legacy_cpar,
     )
 
     # img_base_names = [exp.spar.get_img_base_name(i) for i in range(exp.num_cams)]
@@ -514,6 +605,9 @@ def py_determination_proc_c(
 ) -> None:
     """Calculate 3D positions from 2D correspondences and save to file.
     """
+    legacy_cpar = _to_python_cpar(cpar)
+    legacy_vpar = _to_python_vpar(vpar)
+    legacy_cals = [from_native_calibration(cal) for cal in cals]
     concatenated_pos = np.concatenate(sorted_pos, axis=1)
     concatenated_corresp = np.concatenate(sorted_corresp, axis=1)
 
@@ -521,7 +615,7 @@ def py_determination_proc_c(
         [corr.get_by_pnrs(corresp) for corr, corresp in zip(corrected, concatenated_corresp)]
     )
 
-    pos, _ = point_positions(flat.transpose(1, 0, 2), cpar, cals, vpar)
+    pos, _ = point_positions(flat.transpose(1, 0, 2), legacy_cpar, legacy_cals, legacy_vpar)
 
     if num_cams < 4:
         print_corresp = -1 * np.ones((4, concatenated_corresp.shape[1]))
@@ -710,11 +804,14 @@ def py_sequence_loop(exp) -> None:
         flat = np.array(
             [corr.get_by_pnrs(corresp) for corr, corresp in zip(corrected, sorted_corresp)]
         )
+        legacy_cals = [from_native_calibration(cal) for cal in exp.cals]
+        legacy_cpar = _to_python_cpar(exp.cpar)
+        legacy_vpar = _to_python_vpar(exp.vpar)
         pos, _ = point_positions(
             flat.transpose(1, 0, 2),
-            get_multimedia_par(exp.cpar),
-            exp.cals,
-            exp.vpar,
+            get_multimedia_par(legacy_cpar),
+            legacy_cals,
+            legacy_vpar,
         )
         if len(exp.cals) < 4:
             print_corresp = -1 * np.ones((4, sorted_corresp.shape[1]))

@@ -48,6 +48,24 @@ def sort_coord2d_y(crd: np.ndarray) -> np.ndarray:
     return np.sort(crd, order="y")
 
 
+def _volume_x_lay(vpar: VolumePar) -> list[float]:
+    if hasattr(vpar, "get_X_lay"):
+        return list(vpar.get_X_lay())
+    return list(vpar.x_lay)
+
+
+def _volume_z_min_lay(vpar: VolumePar) -> list[float]:
+    if hasattr(vpar, "get_Zmin_lay"):
+        return list(vpar.get_Zmin_lay())
+    return list(vpar.z_min_lay)
+
+
+def _volume_z_max_lay(vpar: VolumePar) -> list[float]:
+    if hasattr(vpar, "get_Zmax_lay"):
+        return list(vpar.get_Zmax_lay())
+    return list(vpar.z_max_lay)
+
+
 def epi_mm(xl, yl, cal1, cal2, mmp, vpar) -> Tuple[float, float, float, float]:
     """Return the end points of the epipolar line in the "second" camera.
 
@@ -85,15 +103,19 @@ def epi_mm(xl, yl, cal1, cal2, mmp, vpar) -> Tuple[float, float, float, float]:
     pos, v = ray_tracing(xl, yl, cal1, mmp)
 
     # calculate min and max depth for position (valid only for one setup)
-    z_min = vpar.z_min_lay[0] + (pos[0] - vpar.x_lay[0]) * (
-        vpar.z_min_lay[1] - vpar.z_min_lay[0]
-    ) / (vpar.x_lay[1] - vpar.x_lay[0])
+    x_lay = _volume_x_lay(vpar)
+    z_min_lay = _volume_z_min_lay(vpar)
+    z_max_lay = _volume_z_max_lay(vpar)
+
+    z_min = z_min_lay[0] + (pos[0] - x_lay[0]) * (
+        z_min_lay[1] - z_min_lay[0]
+    ) / (x_lay[1] - x_lay[0])
 
     z_max = float(
-        vpar.z_max_lay[0]
-        + (pos[0] - vpar.x_lay[0])
-        * (vpar.z_max_lay[1] - vpar.z_max_lay[0])
-        / (vpar.x_lay[1] - vpar.x_lay[0])
+        z_max_lay[0]
+        + (pos[0] - x_lay[0])
+        * (z_max_lay[1] - z_max_lay[0])
+        / (x_lay[1] - x_lay[0])
     )
 
     X = move_along_ray(z_min, pos, v)
@@ -142,12 +164,16 @@ def epi_mm_2D(
     """
     pos, v = ray_tracing(xl, yl, cal1, mmp)
 
-    z_min = vpar.z_min_lay[0] + (pos[0] - vpar.x_lay[0]) * (
-        vpar.z_min_lay[1] - vpar.z_min_lay[0]
-    ) / (vpar.x_lay[1] - vpar.x_lay[0])
-    z_max = vpar.z_max_lay[0] + (pos[0] - vpar.x_lay[0]) * (
-        vpar.z_max_lay[1] - vpar.z_max_lay[0]
-    ) / (vpar.x_lay[1] - vpar.x_lay[0])
+    x_lay = _volume_x_lay(vpar)
+    z_min_lay = _volume_z_min_lay(vpar)
+    z_max_lay = _volume_z_max_lay(vpar)
+
+    z_min = z_min_lay[0] + (pos[0] - x_lay[0]) * (
+        z_min_lay[1] - z_min_lay[0]
+    ) / (x_lay[1] - x_lay[0])
+    z_max = z_max_lay[0] + (pos[0] - x_lay[0]) * (z_max_lay[1] - z_max_lay[0]) / (
+        x_lay[1] - x_lay[0]
+    )
 
     out = move_along_ray(0.5 * (z_min + z_max), pos, v)
     return out
