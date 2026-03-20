@@ -9,6 +9,7 @@ import importlib
 import os
 import sys
 import re
+import time
 from pathlib import Path
 from typing import List, Sequence, Tuple
 
@@ -747,9 +748,12 @@ def py_sequence_loop(exp) -> None:
     _ensure_target_output_writable(short_file_bases)
 
     for frame in range(first_frame, last_frame + 1):
+        frame_start = time.perf_counter()
+        print(f"[TIMING] frame {frame}: start")
         detections = []
         corrected = []
         for i_cam in range(num_cams):
+            cam_start = time.perf_counter()
             if existing_target:
                 targs = read_targets(short_file_bases[i_cam], frame)
             else:
@@ -779,6 +783,11 @@ def py_sequence_loop(exp) -> None:
                 high_pass = simple_highpass(img, cpar)
                 targs = target_recognition(high_pass, tpar, i_cam, cpar)
 
+            print(
+                f"[TIMING] frame {frame} cam {i_cam + 1}: detection finished in "
+                f"{time.perf_counter() - cam_start:.3f}s with {len(targs)} targets"
+            )
+
             if len(targs) > 0:
                 targs = sort_target_y(targs)
 
@@ -791,7 +800,12 @@ def py_sequence_loop(exp) -> None:
         # correspondence wrapper can use the current unified API contract.
         exp.detections = detections
         exp.corrected = corrected
+        corresp_start = time.perf_counter()
         sorted_pos, sorted_corresp, _ = py_correspondences_proc_c(exp, frame)
+        print(
+            f"[TIMING] frame {frame}: correspondences finished in "
+            f"{time.perf_counter() - corresp_start:.3f}s"
+        )
         print(
             "Frame "
             + str(frame)
@@ -799,6 +813,7 @@ def py_sequence_loop(exp) -> None:
             + repr([s.shape[1] for s in sorted_pos])
             + " correspondences."
         )
+        determine_start = time.perf_counter()
         sorted_pos = np.concatenate(sorted_pos, axis=1)
         sorted_corresp = np.concatenate(sorted_corresp, axis=1)
         flat = np.array(
@@ -813,6 +828,10 @@ def py_sequence_loop(exp) -> None:
             legacy_cals,
             legacy_vpar,
         )
+        print(
+            f"[TIMING] frame {frame}: determination finished in "
+            f"{time.perf_counter() - determine_start:.3f}s"
+        )
         if len(exp.cals) < 4:
             print_corresp = -1 * np.ones((4, sorted_corresp.shape[1]))
             print_corresp[: len(exp.cals), :] = sorted_corresp
@@ -826,6 +845,7 @@ def py_sequence_loop(exp) -> None:
                 for pix, pt in enumerate(pos):
                     pt_args = (pix + 1,) + tuple(pt) + tuple(print_corresp[:, pix])
                     rt_is.write("%4d %9.3f %9.3f %9.3f %4d %4d %4d %4d\n" % pt_args)
+                print(f"[TIMING] frame {frame}: total loop time {time.perf_counter() - frame_start:.3f}s")
         except OSError as exc:
             _raise_output_write_error(output_path, exc)
 

@@ -3,6 +3,7 @@
 import pytest
 import numpy as np
 import os
+import time
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 from optv.correspondences import MatchedCoords
@@ -332,11 +333,19 @@ class TestPySequenceLoop:
     def test_py_sequence_loop_basic_real_data(self, test_cavity_exp):
         """Test basic sequence loop execution with real test_cavity data"""
         from pyptv import ptv
+
+        test_start = time.perf_counter()
+        print("[TIMING] test_py_sequence_loop_basic_real_data: starting setup")
         
         # Initialize PyPTV core with real experiment data
+        setup_start = time.perf_counter()
         cpar, spar, vpar, track_par, tpar, cals, epar = ptv.py_start_proc_c(test_cavity_exp.pm)
+        print(
+            f"[TIMING] py_start_proc_c finished in {time.perf_counter() - setup_start:.3f}s"
+        )
         
         # Create a proper experiment object for testing
+        exp_start = time.perf_counter()
         exp = Mock()
         exp.pm = test_cavity_exp.pm
         exp.num_cams = test_cavity_exp.pm.num_cams
@@ -346,18 +355,25 @@ class TestPySequenceLoop:
         exp.track_par = track_par
         exp.tpar = tpar
         exp.cals = cals
+        print(f"[TIMING] experiment setup finished in {time.perf_counter() - exp_start:.3f}s")
         
         # Modify to process only 1 frame to keep test fast
+        frame_start = time.perf_counter()
         original_last = spar.get_last()
         spar.set_last(spar.get_first())  # Process just first frame
+        print(f"[TIMING] frame-window adjustment finished in {time.perf_counter() - frame_start:.3f}s")
 
         exp.target_filenames = test_cavity_exp.target_filenames
         
         # Should execute without major errors
+        loop_start = time.perf_counter()
+        print("[TIMING] entering py_sequence_loop")
         py_sequence_loop(exp)
+        print(f"[TIMING] py_sequence_loop finished in {time.perf_counter() - loop_start:.3f}s")
         
         # Restore original settings
         spar.set_last(original_last)
+        print(f"[TIMING] total test duration {time.perf_counter() - test_start:.3f}s")
         # If core initialization fails, skip with informative message
 
     def test_py_sequence_loop_invalid_experiment(self):
