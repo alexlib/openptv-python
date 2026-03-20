@@ -5,12 +5,12 @@ import sys
 from pathlib import Path
 
 
-def test_batch_plugins_runs():
+def test_batch_plugins_runs(copy_test_case):
     """Test that pyptv_batch_plugins runs without errors"""
     
     # Path to the script
     script_path = Path(__file__).parent.parent / "pyptv" / "pyptv_batch_plugins.py"
-    test_exp_path = Path(__file__).parent.parent / "working_folder" / "test_splitter"
+    test_exp_path = copy_test_case("test_splitter")
     yaml_file = test_exp_path / "parameters_Run1.yaml"
     
     # Check if test experiment exists

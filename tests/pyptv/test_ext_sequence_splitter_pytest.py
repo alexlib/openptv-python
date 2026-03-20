@@ -6,9 +6,9 @@ from pathlib import Path
 from pyptv.pyptv_batch_plugins import run_batch
 
 @pytest.mark.integration
-def test_ext_sequence_splitter_plugin():
+def test_ext_sequence_splitter_plugin(copy_test_case):
     """Test that ext_sequence_splitter plugin runs without errors using direct call."""
-    test_exp_path = Path(__file__).parent.parent / "working_folder" / "test_splitter"
+    test_exp_path = copy_test_case("test_splitter")
     yaml_file = test_exp_path / "parameters_Run1.yaml"
     assert yaml_file.exists(), f"YAML file not found: {yaml_file}"
 

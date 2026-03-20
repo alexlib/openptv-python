@@ -19,7 +19,7 @@ from optv.calibration import Calibration
 @pytest.fixture
 def test_cavity_exp():
     """Load test_cavity experiment for real testing"""
-    test_cavity_path = Path(__file__).parent.parent / "working_folder" / "test_cavity"
+    test_cavity_path = Path(__file__).parent.parent / "testing_folder" / "test_cavity"
     if not test_cavity_path.exists():
         pytest.skip("test_cavity directory not found")
     
@@ -42,7 +42,7 @@ def test_cavity_exp():
 @pytest.fixture
 def test_splitter_exp():
     """Load test_splitter experiment for real testing"""
-    test_splitter_path = Path(__file__).parent.parent / "working_folder" / "test_splitter"
+    test_splitter_path = Path(__file__).parent.parent / "testing_folder" / "test_splitter"
     if not test_splitter_path.exists():
         pytest.skip("test_splitter directory not found")
     

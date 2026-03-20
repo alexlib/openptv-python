@@ -31,6 +31,22 @@ def clean_test_environment(test_data_dir):
             shutil.rmtree(results_dir)
 
 
+@pytest.fixture
+def copy_test_case(test_data_dir, tmp_path):
+    """Copy one named test case from the shared fixture tree into a temp directory."""
+
+    def _copy(case_name: str):
+        source = test_data_dir / case_name
+        if not source.exists():
+            pytest.skip(f"Test case directory {source} not found")
+
+        destination = tmp_path / case_name
+        shutil.copytree(source, destination, dirs_exist_ok=True)
+        return destination
+
+    return _copy
+
+
 def pytest_runtest_setup(item):
     if 'qt' in item.keywords:
         try:

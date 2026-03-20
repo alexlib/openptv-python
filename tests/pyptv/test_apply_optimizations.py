@@ -11,10 +11,10 @@ import sys
 from pathlib import Path
 
 
-def apply_optimized_parameters():
+def apply_optimized_parameters(copy_test_case):
     """Apply the optimized tracking parameters found through testing"""
     
-    test_path = Path(__file__).parent.parent / "working_folder" / "test_splitter"
+    test_path = copy_test_case("test_splitter")
     yaml_file = test_path / "parameters_Run1.yaml"
     
     if not yaml_file.exists():
@@ -54,12 +54,12 @@ def apply_optimized_parameters():
     return True
 
 
-def test_optimized_performance():
+def test_optimized_performance(copy_test_case):
     """Test tracking performance with optimized parameters"""
     
     import subprocess
     
-    test_path = Path(__file__).parent.parent / "working_folder" / "test_splitter"
+    test_path = copy_test_case("test_splitter")
     yaml_file = test_path / "parameters_Run1.yaml"
     script_path = Path(__file__).parent.parent / "pyptv" / "pyptv_batch_plugins.py"
     cmd = [

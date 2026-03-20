@@ -20,7 +20,7 @@ class TestDetectionConsistency:
     def experiment(self):
         """Create an experiment with test cavity parameters."""
         experiment = Experiment()
-        test_dir = Path(__file__).parent.parent / "working_folder" / "test_cavity"
+        test_dir = Path(__file__).parent.parent / "testing_folder" / "test_cavity"
         experiment.populate_runs(test_dir)
         experiment.set_active(0)  # Use first parameter set
         return experiment
@@ -118,7 +118,7 @@ if __name__ == "__main__":
     
     from pyptv.experiment import Experiment
     experiment = Experiment()
-    test_dir = Path(__file__).parent.parent / "working_folder" / "test_cavity"
+    test_dir = Path(__file__).parent.parent / "testing_folder" / "test_cavity"
     experiment.populate_runs(test_dir)
     experiment.set_active(0)
     

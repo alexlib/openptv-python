@@ -607,7 +607,7 @@ class TestCalibrationReadWrite:
         base_dir = Path(__file__).parent.parent
         candidates = [
             base_dir / "testing_folder" / "test_cavity" / "cal",
-            base_dir / "working_folder" / "test_cavity" / "cal",
+            base_dir / "testing_folder" / "test_cavity" / "cal",
         ]
 
         for candidate in candidates:

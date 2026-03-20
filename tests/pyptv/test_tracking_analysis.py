@@ -7,10 +7,10 @@ from pathlib import Path
 import pytest
 
 
-def analyze_tracking_performance():
+def analyze_tracking_performance(copy_test_case):
     """Analyze tracking performance with different parameter settings"""
     
-    test_path = Path(__file__).parent.parent / "working_folder" / "test_splitter"
+    test_path = copy_test_case("test_splitter")
     yaml_file = test_path / "parameters_Run1.yaml"
     script_path = Path(__file__).parent.parent / "pyptv" / "pyptv_batch_plugins.py"
     if not test_path.exists() or not script_path.exists() or not yaml_file.exists():
@@ -102,10 +102,10 @@ def analyze_tracking_performance():
             print(f"   {line}")
 
 
-def examine_particle_motion():
+def examine_particle_motion(copy_test_case):
     """Examine actual particle motion to understand tracking constraints"""
     
-    test_path = Path(__file__).parent.parent / "working_folder" / "test_splitter"
+    test_path = copy_test_case("test_splitter")
     
     print("🔍 Examining particle motion characteristics...")
     
@@ -137,12 +137,12 @@ def examine_particle_motion():
         print("No correspondence files found - run sequence processing first")
 
 
-def check_tracking_parameters():
+def check_tracking_parameters(copy_test_case):
     """Check current tracking parameters in detail"""
     
     from pyptv.experiment import Experiment
     
-    test_path = Path(__file__).parent.parent / "working_folder" / "test_splitter"
+    test_path = copy_test_case("test_splitter")
     
     experiment = Experiment()
     experiment.populate_runs(test_path)
@@ -181,10 +181,10 @@ def check_tracking_parameters():
             print("✅ Velocity ranges appear reasonable")
 
 
-def test_angle_parameters():
+def test_angle_parameters(copy_test_case):
     """Smoke test one non-default angle constraint."""
     
-    test_path = Path(__file__).parent.parent / "working_folder" / "test_splitter"
+    test_path = copy_test_case("test_splitter")
     
     print("🔍 Testing different angle constraint values...")
     print("="*50)
@@ -227,10 +227,10 @@ def test_angle_parameters():
     assert results[0.5] >= 0.0
 
 
-def test_acceleration_parameters():
+def test_acceleration_parameters(copy_test_case):
     """Smoke test one non-default acceleration constraint."""
     
-    test_path = Path(__file__).parent.parent / "working_folder" / "test_splitter"
+    test_path = copy_test_case("test_splitter")
     
     print("🔍 Testing different acceleration constraint values...")
     print("="*50)
@@ -335,7 +335,7 @@ def run_tracking_test(test_path, test_name):
         return 0.0
 
 
-def test_combined_optimization():
+def test_combined_optimization(copy_test_case):
     """Smoke test one combined angle and acceleration configuration."""
     
     print("🔍 Testing combined parameter optimization...")
@@ -343,7 +343,7 @@ def test_combined_optimization():
     
     best_angle = 0.5
     best_dacc = 2.0
-    test_path = Path(__file__).parent.parent / "working_folder" / "test_splitter"
+    test_path = copy_test_case("test_splitter")
     yaml_file = test_path / "parameters_Run1.yaml"
     backup_content = yaml_file.read_text()
     

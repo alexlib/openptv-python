@@ -18,7 +18,7 @@ from pathlib import Path
 def test_tracking_with_different_parameters():
     """Test tracking with progressively more relaxed velocity constraints"""
     
-    base_test_path = Path(__file__).parent.parent / "working_folder" / "test_splitter"
+    base_test_path = Path(__file__).parent.parent / "testing_folder" / "test_splitter"
     script_path = Path(__file__).parent.parent / "pyptv" / "pyptv_batch_plugins.py"
     
     if not base_test_path.exists() or not script_path.exists():

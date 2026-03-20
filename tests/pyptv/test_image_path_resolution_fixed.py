@@ -197,7 +197,7 @@ def test_absolute_vs_relative_paths(test_data_dir):
 
 if __name__ == "__main__":
     # Run tests manually if called directly
-    test_cavity_dir = str(Path(__file__).resolve().parents[1] / "working_folder" / "test_cavity")
+    test_cavity_dir = str(Path(__file__).resolve().parents[1] / "testing_folder" / "test_cavity")
     
     print("=" * 60)
     print("TESTING IMAGE PATH RESOLUTION")

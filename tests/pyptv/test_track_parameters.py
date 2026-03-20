@@ -23,7 +23,7 @@ REQUIRED_TRACK_PARAMS = [
 ]
 
 @pytest.mark.parametrize("yaml_path", [
-    HERE / 'working_folder' / 'test_cavity' / 'parameters_Run1.yaml',
+    HERE / 'testing_folder' / 'test_cavity' / 'parameters_Run1.yaml',
     # Add more YAML files as needed
 ])
 def test_track_params_in_yaml(yaml_path):
@@ -34,7 +34,7 @@ def test_track_params_in_yaml(yaml_path):
         assert track[key] is not None, f"'{key}' is None in 'track' section of {yaml_path}"
 
 @pytest.mark.parametrize("par_dir", [
-    HERE / 'working_folder' / 'test_cavity' / 'parameters',
+    HERE / 'testing_folder' / 'test_cavity' / 'parameters',
     # Add more parameter directories as needed
 ])
 def test_track_params_in_par_dir(par_dir):

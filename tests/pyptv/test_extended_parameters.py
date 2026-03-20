@@ -7,10 +7,10 @@ from pathlib import Path
 import pytest
 
 
-def test_extended_acceleration_range():
+def test_extended_acceleration_range(copy_test_case):
     """Smoke test a bounded acceleration sweep."""
     
-    test_path = Path(__file__).parent.parent / "working_folder" / "test_splitter"
+    test_path = copy_test_case("test_splitter")
     
     print("🔍 Testing extended acceleration constraint range...")
     print("="*60)
@@ -52,10 +52,10 @@ def test_extended_acceleration_range():
     assert all(isinstance(ratio, float) and ratio >= 0.0 for ratio in results.values())
 
 
-def test_velocity_parameter_interaction():
+def test_velocity_parameter_interaction(copy_test_case):
     """Smoke test one bounded velocity and acceleration interaction set."""
     
-    test_path = Path(__file__).parent.parent / "working_folder" / "test_splitter"
+    test_path = copy_test_case("test_splitter")
     
     print("🔍 Testing velocity-acceleration parameter interactions...")
     print("="*60)

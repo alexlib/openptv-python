@@ -16,7 +16,7 @@ from pyptv.parameter_manager import ParameterManager
 def test_parameter_manager_new_structure():
     """Test the new ParameterManager with global num_cams"""
     
-    test_cavity_path = Path(__file__).parent.parent / "working_folder" / "test_cavity"
+    test_cavity_path = Path(__file__).parent.parent / "testing_folder" / "test_cavity"
     
     if not test_cavity_path.exists():
         print(f"Test cavity path not found: {test_cavity_path}")
