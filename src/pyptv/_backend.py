@@ -1,7 +1,7 @@
 """Backend compatibility layer for PyPTV.
 
-This module exposes the local openptv_python implementation behind the
-legacy names expected by the GUI layer.
+This module exposes the shared openptv_python API and the active engine choice
+behind the legacy names expected by the GUI and batch layers.
 """
 
 from __future__ import annotations
@@ -9,6 +9,14 @@ from __future__ import annotations
 from typing import Any
 
 import openptv_python
+from openptv_python._native_compat import (
+    get_active_engine,
+    get_engine_preference,
+    get_engine_reason,
+    get_engine_status,
+    set_engine,
+    should_use_native,
+)
 
 BACKEND: str = "openptv_python"
 BACKEND_MODULE: Any = openptv_python
@@ -77,13 +85,28 @@ from openptv_python.epi import epipolar_curve
 
 
 def get_backend() -> str:
-    """Return the name of the currently active backend."""
-    return BACKEND or "unknown"
+    """Return the currently active execution engine."""
+    return get_active_engine()
+
+
+def get_engine() -> str:
+    """Return the currently selected engine preference."""
+    return get_engine_preference()
 
 
 def get_backend_module() -> Any:
     """Return the backend module being used."""
     return BACKEND_MODULE
+
+
+def get_backend_reason() -> str:
+    """Return a human-readable explanation of the active engine."""
+    return get_engine_reason()
+
+
+def get_backend_status() -> str:
+    """Return a compact backend status string."""
+    return get_engine_status()
 
 
 # =============================================================================
@@ -155,9 +178,14 @@ def create_target_params(**kwargs) -> TargetParams:
 __all__ = [
     # Backend info
     "get_backend",
+    "get_engine",
     "get_backend_module",
+    "get_backend_reason",
+    "get_backend_status",
     "BACKEND",
     "BACKEND_MODULE",
+    "set_engine",
+    "should_use_native",
     # Classes
     "Calibration",
     "ControlParams",

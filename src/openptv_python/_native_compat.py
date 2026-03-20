@@ -1,10 +1,21 @@
-"""Optional compatibility layer for reusing optv py_bind as a native provider."""
+"""Compatibility layer for selecting between optv and Python/Numba engines."""
 
 from __future__ import annotations
 
 from importlib import import_module
 from types import ModuleType
-from typing import Any
+from typing import Any, Literal
+import warnings
+
+EngineName = Literal["optv", "python"]
+
+DEFAULT_ENGINE: EngineName = "optv"
+ENGINE_OPTV: EngineName = "optv"
+ENGINE_PYTHON: EngineName = "python"
+
+_ENGINE_PREFERENCE: EngineName = DEFAULT_ENGINE
+_ENGINE_REASON: str = ""
+_ENGINE_WARNING_EMITTED = False
 
 
 def _optional_import(module_name: str) -> ModuleType | None:
@@ -55,6 +66,134 @@ HAS_NATIVE_CALIBRATION = optv_calibration is not None and hasattr(
 HAS_NATIVE_TARGETS = optv_tracking_framebuf is not None and hasattr(
     optv_tracking_framebuf, "Target"
 )
+
+
+def _emit_engine_warning(reason: str) -> None:
+    global _ENGINE_WARNING_EMITTED
+    if _ENGINE_WARNING_EMITTED:
+        return
+
+    warnings.warn(reason, RuntimeWarning, stacklevel=3)
+    _ENGINE_WARNING_EMITTED = True
+
+
+def _set_engine_state(engine: EngineName, reason: str) -> None:
+    global _ENGINE_PREFERENCE, _ENGINE_REASON, _ENGINE_WARNING_EMITTED
+    _ENGINE_PREFERENCE = engine
+    _ENGINE_REASON = reason
+    _ENGINE_WARNING_EMITTED = False
+
+
+def _resolve_engine_request(engine: EngineName | str | None) -> EngineName:
+    if engine is None:
+        return DEFAULT_ENGINE
+
+    normalized = str(engine).strip().lower()
+    if normalized in {"optv", "native", "c", "fast"}:
+        return ENGINE_OPTV
+    if normalized in {"python", "numba", "pure-python", "fallback"}:
+        return ENGINE_PYTHON
+
+    raise ValueError(f"Unknown engine '{engine}'. Use 'optv' or 'python'.")
+
+
+def _resolve_active_engine() -> tuple[EngineName, str]:
+    if _ENGINE_PREFERENCE == ENGINE_PYTHON:
+        return ENGINE_PYTHON, "Forced Python engine"
+
+    if HAS_OPTV:
+        return ENGINE_OPTV, "Using optv engine"
+
+    return ENGINE_PYTHON, "optv is unavailable; using Python/Numba fallback"
+
+
+def set_engine(engine: EngineName | str | None = None, *, warn_once: bool = True) -> EngineName:
+    """Set the preferred engine for native-backed calls.
+
+    Parameters
+    ----------
+    engine:
+        Preferred engine. ``optv`` is the default and ``python`` forces the
+        Python/Numba code path.
+    warn_once:
+        Emit a one-time warning when the selected engine cannot be used.
+    """
+
+    requested = _resolve_engine_request(engine)
+
+    if requested == ENGINE_PYTHON:
+        _set_engine_state(requested, "Forced Python engine")
+        return ENGINE_PYTHON
+
+    if HAS_OPTV:
+        _set_engine_state(requested, "Using optv engine")
+        return ENGINE_OPTV
+
+    reason = "optv is unavailable; using Python/Numba fallback"
+    _set_engine_state(requested, reason)
+    if warn_once:
+        _emit_engine_warning(reason)
+    return ENGINE_PYTHON
+
+
+def get_engine_preference() -> EngineName:
+    """Return the user-requested engine preference."""
+
+    return _ENGINE_PREFERENCE
+
+
+def get_active_engine() -> EngineName:
+    """Return the engine currently used for native-backed calls."""
+
+    active, _ = _resolve_active_engine()
+    return active
+
+
+def get_engine_reason() -> str:
+    """Return a human-readable explanation of the active engine choice."""
+
+    active, reason = _resolve_active_engine()
+    if active == ENGINE_PYTHON and _ENGINE_PREFERENCE == ENGINE_PYTHON:
+        return reason
+    if active == ENGINE_PYTHON and _ENGINE_PREFERENCE == ENGINE_OPTV:
+        return reason
+    return reason
+
+
+def get_engine_status() -> str:
+    """Return a short status string for GUI and batch reporting."""
+
+    return f"engine={get_active_engine()} ({get_engine_reason()})"
+
+
+def should_use_native(feature_name: str | None = None) -> bool:
+    """Return True when the native optv implementation should be used.
+
+    The selector prefers optv by default and falls back to Python/Numba when
+    optv is unavailable or the user forced the Python engine.
+    """
+
+    if get_engine_preference() == ENGINE_PYTHON:
+        return False
+
+    if feature_name in {None, "", "preprocess_image"}:
+        return HAS_NATIVE_PREPROCESS
+
+    if feature_name == "target_recognition":
+        return HAS_NATIVE_SEGMENTATION
+
+    if feature_name == "calibration":
+        return HAS_NATIVE_CALIBRATION
+
+    if feature_name == "targets":
+        return HAS_NATIVE_TARGETS
+
+    return HAS_OPTV
+
+
+# Initialize once so the default preference is explicit and optv availability
+# is reported immediately in sessions where it is missing.
+set_engine(DEFAULT_ENGINE, warn_once=True)
 
 
 def native_preprocess_image(*args: Any, **kwargs: Any) -> Any:

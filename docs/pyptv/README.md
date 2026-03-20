@@ -2,7 +2,7 @@
 
 This documentation tree is the detailed guide for the unified repository.
 
-Start with the top-level [README.md](../../README.md) for the current combined project overview, versioning, and installation entry points.
+Start with the top-level [README.md](../../README.md) for the current combined project overview, versioning, engine selection, and installation entry points.
 
 Use the pages in this directory for deeper topic-specific documentation:
 

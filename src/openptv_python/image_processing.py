@@ -5,7 +5,7 @@ import copy
 import numpy as np
 from numba import njit
 
-from ._native_compat import HAS_NATIVE_PREPROCESS, native_preprocess_image
+from ._native_compat import native_preprocess_image, should_use_native
 from ._native_convert import to_native_control_par
 from .parameters import ControlPar
 
@@ -261,7 +261,7 @@ def prepare_image(
 
 def preprocess_image(img, filter_hp, cpar, dim_lp) -> np.ndarray:
     """Decorate prepare_image with default parameters."""
-    if HAS_NATIVE_PREPROCESS:
+    if should_use_native("preprocess_image"):
         native_cpar = to_native_control_par(cpar)
         return native_preprocess_image(
             img,

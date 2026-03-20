@@ -5,7 +5,7 @@ import json
 import yaml
 from pathlib import Path
 import numpy as np
-from traits.api import HasTraits, Int, Bool, Instance, List, Enum
+from traits.api import HasTraits, Int, Bool, Instance, List, Enum, Str
 from traitsui.api import View, Item, ListEditor, Handler, TreeEditor, TreeNode, Separator, VGroup, HGroup, Group, CodeEditor, VSplit
 from traits.api import File
 from traitsui.api import FileEditor
@@ -26,6 +26,8 @@ from .__version__ import __version__
 from . import ptv
 from ._backend import (
     Calibration,
+    get_backend_reason,
+    get_backend_status,
     TargetArray,
     convert_arr_metric_to_pixel,
     epipolar_curve,
@@ -33,6 +35,7 @@ from ._backend import (
     full_calibration,
     image_coordinates,
     match_detection_to_ref,
+    set_engine,
     target_recognition,
 )
 from .calibration_gui import CalibrationGUI
@@ -1149,11 +1152,17 @@ class MainGUI(HasTraits):
     num_cams = Int(0)
     orig_names = List()
     orig_images = List()
+    engine = Enum("optv", "python")
+    engine_status = Str()
     
     # Defines GUI view --------------------------
     view = View(
         VSplit(
             VGroup(
+                HGroup(
+                    Item("engine", label="Engine"),
+                    Item("engine_status", style="readonly", show_label=False),
+                ),
                 HGroup(
                     Item(
                         name="exp1",
@@ -1201,6 +1210,15 @@ class MainGUI(HasTraits):
         self.exp_path = yaml_file.parent
         self.exp1 = experiment
         self.plugins = Plugins(experiment=self.exp1)
+        self._engine_syncing = False
+
+        configured_engine = str(self.exp1.pm.parameters.get("engine", "optv")).lower()
+        if configured_engine not in {"optv", "python"}:
+            configured_engine = "optv"
+        self._engine_syncing = True
+        self.engine = configured_engine
+        self._engine_syncing = False
+        self._apply_engine_choice(save=False)
 
         # Set the active paramset to the provided YAML file
         # for idx, paramset in enumerate(self.exp1.paramsets):
@@ -1250,6 +1268,24 @@ class MainGUI(HasTraits):
                 # Move active paramset to the front
                 self.exp1.paramsets.insert(0, self.exp1.paramsets.pop(idx))
                 self.exp1.set_active(0)
+
+    def _apply_engine_choice(self, save: bool = True) -> None:
+        """Apply the selected engine to the shared API and optionally persist it."""
+        selected_engine = self.engine if self.engine in {"optv", "python"} else "optv"
+        self._engine_syncing = True
+        actual_engine = set_engine(selected_engine)
+        self.engine = selected_engine
+        self.engine_status = get_backend_status()
+        self.exp1.pm.parameters["engine"] = selected_engine
+        print(f"Engine preference: {selected_engine}; active engine: {actual_engine}; {get_backend_reason()}")
+        self._engine_syncing = False
+        if save and self.exp1.active_params is not None:
+            self.exp1.save_parameters()
+
+    def _engine_changed(self):
+        if getattr(self, "_engine_syncing", False):
+            return
+        self._apply_engine_choice(save=True)
 
     def get_parameter(self, key):
         """Delegate parameter access to experiment"""
@@ -1504,14 +1540,27 @@ def main():
     software_path = Path.cwd().resolve()
     print(f"Running PyPTV from {software_path}")
 
+    import argparse
+
+    parser = argparse.ArgumentParser(description="PyPTV GUI launcher")
+    parser.add_argument("path", nargs="?", help="YAML parameter file or experiment directory")
+    parser.add_argument(
+        "--engine",
+        choices=["optv", "python"],
+        default=None,
+        help="Select the processing engine (default: optv)",
+    )
+    args = parser.parse_args()
+
     yaml_file = None
     exp_path = None
     exp = None
+    engine_override = args.engine
 
-    if len(sys.argv) == 2:
-        arg_path = Path(sys.argv[1]).resolve()
-        # first option - suppy YAML file path and this would be your experiment
-        # we will also see what are additional parameter sets exist and 
+    if args.path:
+        arg_path = Path(args.path).resolve()
+        # first option - supply YAML file path and this would be your experiment
+        # we will also see what are additional parameter sets exist and
         # initialize the Experiment() object
         if arg_path.is_file() and arg_path.suffix in {".yaml", ".yml"}:
             yaml_file = arg_path
@@ -1523,14 +1572,12 @@ def main():
             # prepare additional yaml files for other runs if not existing
             print(f"Initialize  Experiment from {yaml_file.parent}")
             exp_path = yaml_file.parent
-            exp = Experiment(pm=pm) # ensures pm is an active parameter set
+            exp = Experiment(pm=pm)  # ensures pm is an active parameter set
             exp.populate_runs(exp_path)
-            # exp.pm.from_yaml(yaml_file)
-        elif arg_path.is_dir(): # second option - supply directory
+        elif arg_path.is_dir():  # second option - supply directory
             exp = Experiment()
             exp.populate_runs(arg_path)
             yaml_file = exp.active_params.yaml_path
-            # exp.pm.from_yaml(yaml_file)
             print(f"Using top YAML file found: {yaml_file}")
         else:
             raise OSError(f"Argument must be a directory or YAML file, got: {arg_path}")
@@ -1553,6 +1600,12 @@ def main():
         # exp.pm.from_yaml(yaml_file)
         print(f"Without inputs, PyPTV uses default case {yaml_file}")
         print("Tip: in PyPTV use File -> Open to select another YAML file")
+
+    if engine_override is not None:
+        if exp is None:
+            raise RuntimeError("Experiment was not initialized before applying the engine override")
+        exp.pm.parameters["engine"] = engine_override
+        print(f"Engine override from CLI: {engine_override}")
 
     if not yaml_file or not yaml_file.exists():
         raise OSError(f"YAML parameter file does not exist: {yaml_file}")

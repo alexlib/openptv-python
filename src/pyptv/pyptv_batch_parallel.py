@@ -31,6 +31,7 @@ import multiprocessing
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Union, List, Tuple
 
+from ._backend import get_backend_reason, set_engine
 from .ptv import py_start_proc_c, py_sequence_loop, generate_short_file_bases
 from .experiment import Experiment
 
@@ -49,7 +50,12 @@ class ProcessingError(Exception):
 
 # AttrDict removed - using direct dictionary access with Experiment object
 
-def run_sequence_chunk(yaml_file: Union[str, Path], seq_first: int, seq_last: int) -> Tuple[int, int]:
+def run_sequence_chunk(
+    yaml_file: Union[str, Path],
+    seq_first: int,
+    seq_last: int,
+    engine: str = "optv",
+) -> Tuple[int, int]:
     """Run sequence processing for a chunk of frames in a separate process.
     
     Args:
@@ -80,6 +86,10 @@ def run_sequence_chunk(yaml_file: Union[str, Path], seq_first: int, seq_last: in
         
         # Load parameters from YAML file
         experiment.pm.from_yaml(yaml_file)
+        configured_engine = engine or experiment.pm.parameters.get("engine", "optv")
+        experiment.pm.parameters["engine"] = configured_engine
+        set_engine(configured_engine)
+        logger.info(f"Engine: {configured_engine}; {get_backend_reason()}")
         
         # Initialize processing parameters using the experiment
         cpar, spar, vpar, track_par, tpar, cals, epar = py_start_proc_c(experiment.pm)
@@ -250,7 +260,8 @@ def main(
     first: Union[str, int],
     last: Union[str, int],
     n_processes: int = 2,
-    mode: str = "both"
+    mode: str = "both",
+    engine: str = "optv",
 ) -> None:
     """Run PyPTV parallel batch processing with modular mode support.
     
@@ -293,6 +304,7 @@ def main(
         logger.info(f"Frame range: {seq_first} to {seq_last}")
         logger.info(f"Number of processes: {n_processes}")
         logger.info(f"Mode: {mode}")
+        logger.info(f"Engine override: {engine}")
         # Validate YAML file and experiment setup
         exp_path = validate_experiment_setup(yaml_file)
         logger.info(f"Experiment directory: {exp_path}")
@@ -309,7 +321,7 @@ def main(
             failed_chunks = 0
             with ProcessPoolExecutor(max_workers=n_processes) as executor:
                 future_to_range = {
-                    executor.submit(run_sequence_chunk, yaml_file, chunk_first, chunk_last): (chunk_first, chunk_last)
+                    executor.submit(run_sequence_chunk, yaml_file, chunk_first, chunk_last, engine): (chunk_first, chunk_last)
                     for chunk_first, chunk_last in ranges
                 }
                 for future in as_completed(future_to_range):
@@ -335,7 +347,7 @@ def main(
             logger.info("Starting tracking step (serial, not parallelized)")
             try:
                 from .pyptv_batch import run_batch
-                run_batch(yaml_file, seq_first, seq_last, mode="tracking")
+                run_batch(yaml_file, seq_first, seq_last, mode="tracking", engine=engine)
                 logger.info("Tracking step completed successfully.")
             except Exception as e:
                 logger.error(f"Tracking step failed: {e}")
@@ -363,6 +375,12 @@ def parse_command_line_args():
     parser.add_argument("last_frame", type=int, help="Last frame number.")
     parser.add_argument("n_processes", type=int, help="Number of parallel processes.")
     parser.add_argument(
+        "--engine",
+        choices=["optv", "python"],
+        default=None,
+        help="Select the processing engine (default: optv)",
+    )
+    parser.add_argument(
         "--mode", type=str, default="both", choices=["both", "sequence", "tracking"],
         help="Which steps to run: both (default), sequence, or tracking."
     )
@@ -372,7 +390,12 @@ def parse_command_line_args():
     last_frame = args.last_frame
     n_processes = args.n_processes
     mode = args.mode
-    return yaml_file, first_frame, last_frame, n_processes, mode
+    from .parameter_manager import ParameterManager
+
+    pm = ParameterManager()
+    pm.from_yaml(yaml_file)
+    engine = args.engine or pm.parameters.get("engine", "optv")
+    return yaml_file, first_frame, last_frame, n_processes, mode, engine
 
 if __name__ == "__main__":
     """Entry point for command line execution.
@@ -390,8 +413,8 @@ if __name__ == "__main__":
     try:
         logger.info("Starting PyPTV parallel batch processing")
         logger.info(f"Command line arguments: {sys.argv}")
-        yaml_file, first_frame, last_frame, n_processes, mode = parse_command_line_args()
-        main(yaml_file, first_frame, last_frame, n_processes, mode)
+        yaml_file, first_frame, last_frame, n_processes, mode, engine = parse_command_line_args()
+        main(yaml_file, first_frame, last_frame, n_processes, mode, engine)
         logger.info("Parallel batch processing completed successfully")
     except (ValueError, ProcessingError) as e:
         logger.error(f"Parallel batch processing failed: {e}")

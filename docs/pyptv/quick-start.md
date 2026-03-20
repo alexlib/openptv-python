@@ -9,6 +9,8 @@ Get up and running with PyPTV using the included test dataset in under 10 minute
 
 PyPTV uses a modern conda environment (`environment.yml`) and separates tests into headless (`tests/`) and GUI (`tests_gui/`) categories. See the README for details.
 
+By default the GUI and batch tools use `optv` when it is available. Pass `--engine python` if you want to force the Python/Numba backend while debugging or comparing results.
+
 ## Overview
 
 This guide walks you through:
@@ -33,6 +35,9 @@ Start the PyPTV graphical interface:
 
 ```bash
 python -m pyptv.pyptv_gui
+
+# force the Python engine instead of optv
+python -m pyptv.pyptv_gui --engine python
 ```
 
 The main PyPTV window should open with a parameter tree on the left and camera views on the right.

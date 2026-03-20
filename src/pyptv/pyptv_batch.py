@@ -27,6 +27,7 @@ import sys
 import time
 from typing import Union
 
+from ._backend import get_backend_reason, set_engine
 from .ptv import py_start_proc_c, py_trackcorr_init, py_sequence_loop, generate_short_file_bases
 from .experiment import Experiment
 
@@ -82,7 +83,13 @@ def validate_experiment_setup(yaml_file: Path) -> Path:
     return exp_path
 
 
-def run_batch(yaml_file: Path, seq_first: int, seq_last: int, mode: str = "both") -> None:
+def run_batch(
+    yaml_file: Path,
+    seq_first: int,
+    seq_last: int,
+    mode: str = "both",
+    engine: str = "optv",
+) -> None:
     """Run batch processing for a sequence of frames.
     
     Args:
@@ -112,6 +119,10 @@ def run_batch(yaml_file: Path, seq_first: int, seq_last: int, mode: str = "both"
         # Load parameters from YAML file
         print(f"Loading parameters from: {yaml_file}")
         experiment.pm.from_yaml(yaml_file)
+        configured_engine = engine or experiment.pm.parameters.get("engine", "optv")
+        experiment.pm.parameters["engine"] = configured_engine
+        set_engine(configured_engine)
+        print(f"Engine: {configured_engine}; {get_backend_reason()}")
 
         print(f"Initializing processing with num_cams = {experiment.pm.num_cams}")
         cpar, spar, vpar, track_par, tpar, cals, epar = py_start_proc_c(experiment.pm)
@@ -174,7 +185,8 @@ def main(
     first: Union[str, int], 
     last: Union[str, int], 
     repetitions: int = 1,
-    mode: str = "both"
+    mode: str = "both",
+    engine: str = "optv",
 ) -> None:
     """Run PyPTV batch processing.
     
@@ -211,6 +223,7 @@ def main(
         print(f"Starting batch processing with YAML file: {yaml_file}")
         print(f"Frame range: {seq_first} to {seq_last}")
         print(f"Repetitions: {repetitions}")
+        print(f"Engine override: {engine}")
         # Validate YAML file and experiment setup
         # exp_path = validate_experiment_setup(yaml_file)
         print(f"Experiment directory: {exp_path}")
@@ -224,7 +237,7 @@ def main(
         for i in range(repetitions):
             if repetitions > 1:
                 print(f"Starting repetition {i + 1} of {repetitions}")
-            run_batch(yaml_file, seq_first, seq_last, mode=mode)
+            run_batch(yaml_file, seq_first, seq_last, mode=mode, engine=engine)
         elapsed_time = time.time() - start_time
         print(f"Total processing time: {elapsed_time:.2f} seconds")
         
@@ -236,7 +249,7 @@ def main(
         raise ProcessingError(f"Unexpected error: {e}")
 
 
-def parse_command_line_args() -> tuple[Path, int, int]:
+def parse_command_line_args() -> tuple[Path, int, int, str, str]:
     """Parse and validate command line arguments.
     
     Returns:
@@ -250,6 +263,12 @@ def parse_command_line_args() -> tuple[Path, int, int]:
     parser.add_argument("yaml_file", type=str, help="YAML parameter file")
     parser.add_argument("first_frame", type=int, nargs="?", help="First frame number")
     parser.add_argument("last_frame", type=int, nargs="?", help="Last frame number")
+    parser.add_argument(
+        "--engine",
+        choices=["optv", "python"],
+        default=None,
+        help="Select the processing engine (default: optv)",
+    )
     parser.add_argument("--mode", choices=["both", "sequence", "tracking"], default="both", help="Which steps to run: both (default), sequence, or tracking")
     args = parser.parse_args()
 
@@ -269,8 +288,9 @@ def parse_command_line_args() -> tuple[Path, int, int]:
         last_frame = pm.parameters.get("sequence").get("last")
 
     mode = args.mode
+    engine = args.engine or pm.parameters.get("engine", "optv")
 
-    return yaml_file, first_frame, last_frame, mode
+    return yaml_file, first_frame, last_frame, mode, engine
 
 
 if __name__ == "__main__":
@@ -290,8 +310,8 @@ if __name__ == "__main__":
         print("Starting batch processing")
         print(f"Command line arguments: {sys.argv}")
         
-        yaml_file, first_frame, last_frame, mode = parse_command_line_args()
-        main(yaml_file, first_frame, last_frame, mode=mode)
+        yaml_file, first_frame, last_frame, mode, engine = parse_command_line_args()
+        main(yaml_file, first_frame, last_frame, mode=mode, engine=engine)
         
         print("Batch processing completed successfully")
         

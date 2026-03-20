@@ -5,7 +5,7 @@ import numpy as np
 from numba import njit
 from scipy.ndimage import center_of_mass, gaussian_filter, label, maximum_filter
 
-from ._native_compat import HAS_NATIVE_SEGMENTATION, native_target_recognition
+from ._native_compat import native_target_recognition, should_use_native
 from ._native_convert import (
     from_native_target_array,
     to_native_control_par,
@@ -47,7 +47,7 @@ def targ_rec(
 ) -> List[Target]:
     """Target recognition function."""
     if (
-        HAS_NATIVE_SEGMENTATION
+        should_use_native("target_recognition")
         and xmin <= 0
         and ymin <= 0
         and xmax >= cpar.imx

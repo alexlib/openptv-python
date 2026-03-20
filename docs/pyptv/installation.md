@@ -64,6 +64,8 @@ The script will:
 - Build and install OpenPTV (liboptv)
 - Install PyPTV in development mode
 
+If you want the GUI and batch tools to use the Python fallback engine for debugging or testing, install the repo normally and launch with `--engine python`.
+
 ### Method 2: Manual Installation
 
 If you prefer manual control or need to customize the installation:
@@ -115,8 +117,12 @@ python -c "import pyptv; print('PyPTV installed successfully!')"
 # Launch the GUI (should open without errors)
 python -m pyptv.pyptv_gui
 
+# force Python fallback for debugging/testing
+python -m pyptv.pyptv_gui --engine python
+
 # Run the test suite
 pytest tests/
+```
 
 ## Testing: Headless vs GUI
 

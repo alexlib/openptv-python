@@ -29,6 +29,14 @@ class ParameterManager:
         self._class_map = self._get_class_map()
         self.plugins_info = {}  # Initialize plugins_info
 
+    def get_engine(self):
+        """Return the configured execution engine."""
+        return self.parameters.get('engine', 'optv')
+
+    def set_engine(self, engine: str):
+        """Store the configured execution engine."""
+        self.parameters['engine'] = engine
+
     def _get_class_map(self):
         dummy_path = Path('.')
         class_map = {}
@@ -161,6 +169,10 @@ class ParameterManager:
             }
             print("Info: Populated plugins from plugins directory")
 
+        if 'engine' not in self.parameters:
+            self.parameters['engine'] = 'optv'
+            print("Info: Added default engine parameter")
+
     def scan_plugins(self, plugins_dir=None):
         """Scan the plugins directory and update self.plugins_info with available plugins."""
         if plugins_dir is None:
@@ -237,6 +249,7 @@ class ParameterManager:
 
         self.num_cams = data.get('num_cams')
         self.parameters = data
+        self.parameters.setdefault('engine', 'optv')
         self.yaml_path = file_path  # Store the path for later reference
 
 
