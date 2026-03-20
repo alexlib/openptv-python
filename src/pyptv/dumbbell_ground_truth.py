@@ -15,11 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
-from openptv_python.calibration import Calibration
-from openptv_python.imgcoord import image_coordinates
-from openptv_python.tracking_frame_buf import TargetArray
-from openptv_python.trafo import arr_metric_to_pixel as convert_arr_metric_to_pixel
-
+from ._backend import Calibration, TargetArray, convert_arr_metric_to_pixel, image_coordinates
 from .parameter_manager import ParameterManager
 from . import ptv
 
