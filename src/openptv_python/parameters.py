@@ -843,6 +843,10 @@ class TargetPar(Parameters):
         """Set the maximum discontinuity."""
         self.discont = value
 
+    def get_max_discontinuity(self):
+        """Return the maximum discontinuity."""
+        return self.discont
+
 
 def read_target_par(filename: Path) -> TargetPar:
     """Read target parameters from file and returns target_par object."""

@@ -605,7 +605,17 @@ class TestCalibrationReadWrite:
     @property
     def test_cal_dir(self):
         """Path to test calibration files."""
-        return Path(__file__).parent.parent / "working_folder" / "test_cavity" / "cal"
+        base_dir = Path(__file__).parent.parent
+        candidates = [
+            base_dir / "testing_folder" / "test_cavity" / "cal",
+            base_dir / "working_folder" / "test_cavity" / "cal",
+        ]
+
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+
+        return candidates[0]
     
     def setUp(self):
         """Set up test fixtures - called before each test method."""
