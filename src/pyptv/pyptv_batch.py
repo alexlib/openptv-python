@@ -27,6 +27,8 @@ import sys
 import time
 from typing import Union
 
+import yaml
+
 from ._backend import get_backend_reason, set_engine
 from .ptv import py_start_proc_c, py_trackcorr_init, py_sequence_loop, generate_short_file_bases
 from .experiment import Experiment
@@ -64,21 +66,31 @@ def validate_experiment_setup(yaml_file: Path) -> Path:
     
     # Get experiment directory (parent of YAML file)
     exp_path = yaml_file.parent
-    
-    # Check for required subdirectories relative to YAML file location
-    # Note: 'res' directory is created automatically if missing
-    # required_dirs = ["img", "cal"]
-    # missing_dirs = []
-    
-    # for dir_name in required_dirs:
-    #     dir_path = exp_path / dir_name
-    #     if not dir_path.exists():
-    #         missing_dirs.append(dir_name)
-    
-    # if missing_dirs:
-    #     raise ProcessingError(
-    #         f"Missing required directories relative to {yaml_file}: {', '.join(missing_dirs)}"
-    #     )
+
+    with yaml_file.open("r", encoding="utf-8") as file:
+        data = yaml.safe_load(file) or {}
+
+    required_dirs = set()
+    for section_name in ("sequence", "ptv"):
+        section = data.get(section_name, {}) or {}
+        for key in ("base_name", "img_name", "img_cal"):
+            values = section.get(key, [])
+            if isinstance(values, (str, Path)):
+                values = [values]
+            for value in values:
+                if not value:
+                    continue
+                required_dirs.add(Path(value).parent)
+
+    if not required_dirs:
+        required_dirs.add(Path("img"))
+
+    missing_dirs = [str(dir_name) for dir_name in sorted(required_dirs) if not (exp_path / dir_name).exists()]
+
+    if missing_dirs:
+        raise ProcessingError(
+            f"Missing required directories relative to {yaml_file}: {', '.join(missing_dirs)}"
+        )
     
     return exp_path
 
@@ -119,6 +131,8 @@ def run_batch(
         # Load parameters from YAML file
         print(f"Loading parameters from: {yaml_file}")
         experiment.pm.from_yaml(yaml_file)
+        if mode in ("both", "sequence"):
+            experiment.pm.parameters.setdefault("pft_version", {})["Existing_Target"] = 0
         configured_engine = engine or experiment.pm.parameters.get("engine", "optv")
         experiment.pm.parameters["engine"] = configured_engine
         set_engine(configured_engine)

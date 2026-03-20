@@ -9,7 +9,7 @@ from pyptv._backend import Tracker, default_naming
 @pytest.mark.usefixtures("tmp_path")
 def test_tracker_minimal(tmp_path):
     # Use the real test data from tests/track
-    test_data_dir = Path(__file__).parent / "track"
+    test_data_dir = Path(__file__).parent.parent / "testing_folder" / "track"
     # Copy all necessary files and folders to tmp_path for isolation
     # Copy 'cal' folder as usual
     shutil.copytree(test_data_dir / "cal", tmp_path / "cal")

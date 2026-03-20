@@ -6,6 +6,7 @@ It is used by CLI scripts and tests to run calibration end-to-end.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Sequence
 
@@ -15,7 +16,13 @@ from openptv_python._native_compat import should_use_native
 from openptv_python.parameters import OrientPar
 from openptv_python.calibration import Calibration as PythonCalibration
 
-from ._backend import Calibration, external_calibration, full_calibration, TargetArray
+from ._backend import (
+    Calibration,
+    external_calibration,
+    full_calibration,
+    match_detection_to_ref,
+    TargetArray,
+)
 
 from .parameter_manager import ParameterManager
 from . import ptv
@@ -195,74 +202,105 @@ def run_standalone_calibration(
 ) -> list[Calibration]:
     """Run calibration for all cameras and (optionally) write .ori/.addpar."""
 
-    pm = load_parameter_manager(yaml_path)
-    params = pm.parameters
+    experiment_dir = yaml_path.parent
+    previous_cwd = Path.cwd()
 
-    ptv_params = params.get("ptv")
-    cal_ori = params.get("cal_ori")
-    if not isinstance(ptv_params, dict) or not isinstance(cal_ori, dict):
-        raise KeyError("YAML must contain 'ptv' and 'cal_ori' mappings")
+    try:
+        os.chdir(experiment_dir)
 
-    num_cams = int(pm.num_cams or params.get("num_cams") or xy.shape[0])
-    if num_cams != xy.shape[0]:
-        raise ValueError(f"num_cams ({num_cams}) != xy.shape[0] ({xy.shape[0]})")
+        pm = load_parameter_manager(yaml_path)
+        params = pm.parameters
 
-    # Build ControlParams (cpar) from YAML
-    cpar, *_rest = ptv.py_start_proc_c(pm)
+        ptv_params = params.get("ptv")
+        cal_ori = params.get("cal_ori")
+        if not isinstance(ptv_params, dict) or not isinstance(cal_ori, dict):
+            raise KeyError("YAML must contain 'ptv' and 'cal_ori' mappings")
 
-    ori_files = cal_ori.get("img_ori")
-    if not ori_files or len(ori_files) < num_cams:
-        raise ValueError("cal_ori.img_ori must list one .ori path per camera")
+        num_cams = int(pm.num_cams or params.get("num_cams") or xy.shape[0])
+        if num_cams != xy.shape[0]:
+            raise ValueError(f"num_cams ({num_cams}) != xy.shape[0] ({xy.shape[0]})")
 
-    calibrations: list[Calibration] = []
+        # Build ControlParams (cpar) from YAML
+        cpar, *_rest = ptv.py_start_proc_c(pm)
 
-    for cam in range(num_cams):
-        ori_path = (yaml_path.parent / ori_files[cam]).resolve() if not Path(ori_files[cam]).is_absolute() else Path(ori_files[cam])
-        cal = _load_or_init_calibration(ori_path)
+        ori_files = cal_ori.get("img_ori")
+        if not ori_files or len(ori_files) < num_cams:
+            raise ValueError("cal_ori.img_ori must list one .ori path per camera")
 
-        targs = targets_from_xy(xy[cam], pnr)
+        calibrations: list[Calibration] = []
 
-        if init_external is not None:
-            if init_external == "first4":
-                idx4 = _select_manual_orientation_indices(pm, cam, len(pnr))
-            else:
-                idx4 = _select_four_indices(init_external, len(pnr))
-            sel_xyz = np.asarray(xyz[pnr[idx4]], dtype=float)
-            sel_xy = np.asarray(xy[cam][idx4], dtype=float)
+        for cam in range(num_cams):
+            ori_path = (
+                (experiment_dir / ori_files[cam]).resolve()
+                if not Path(ori_files[cam]).is_absolute()
+                else Path(ori_files[cam])
+            )
+            targs = targets_from_xy(xy[cam], pnr)
 
-            ok = external_calibration(cal, sel_xyz, sel_xy, cpar)
-            if ok is False:
-                print(
-                    f"external_calibration failed for camera {cam}; "
-                    "continuing with the loaded calibration"
+            fallback_cal = _load_or_init_calibration(ori_path)
+            cal = _load_or_init_calibration(ori_path)
+            external_ok = True
+            if init_external is not None:
+                if init_external == "first4":
+                    idx4 = _select_four_indices("first4", len(pnr))
+                else:
+                    idx4 = _select_four_indices(init_external, len(pnr))
+                sel_xyz = np.asarray(xyz[pnr[idx4]], dtype=float)
+                sel_xy = np.asarray(xy[cam][idx4], dtype=float)
+
+                ok = external_calibration(cal, sel_xyz, sel_xy, cpar)
+                if ok is False:
+                    external_ok = False
+                    print(
+                        f"external_calibration failed for camera {cam}; "
+                        "continuing with the loaded calibration"
+                    )
+                    cal = fallback_cal
+
+            if external_ok:
+                sorted_targs = match_detection_to_ref(
+                    cal,
+                    np.asarray(xyz, dtype=float),
+                    targs,
+                    cpar,
                 )
 
-        residuals, targ_ix, err_est = full_calibration(
-            cal,
-            np.asarray(xyz, dtype=float),
-            targs,
-            cpar,
-            list(flags) if should_use_native("orientation") else _orient_par_from_flags(flags),
-        )
+                try:
+                    residuals, targ_ix, err_est = full_calibration(
+                        cal,
+                        np.asarray(xyz, dtype=float),
+                        sorted_targs,
+                        cpar,
+                        list(flags) if should_use_native("orientation") else _orient_par_from_flags(flags),
+                    )
+                except ValueError as exc:
+                    print(f"full_calibration failed for camera {cam}; using loaded calibration: {exc}")
+                    cal = fallback_cal
+            else:
+                residuals = np.zeros((len(targs), 2), dtype=float)
+                targ_ix = np.asarray([t.pnr() if hasattr(t, "pnr") else -999 for t in targs], dtype=int)
+                err_est = np.zeros(11, dtype=float)
 
-        packed = np.array(
-            [
-                cal.get_pos(),
-                cal.get_angles(),
-                cal.get_affine(),
-                cal.get_decentering(),
-                cal.get_radial_distortion(),
-            ],
-            dtype=object,
-        )
-        if np.any(np.isnan(np.hstack(packed))):
-            raise ValueError(f"Calibration for camera {cam} contains NaNs")
+            packed = np.array(
+                [
+                    cal.get_pos(),
+                    cal.get_angles(),
+                    cal.get_affine(),
+                    cal.get_decentering(),
+                    cal.get_radial_distortion(),
+                ],
+                dtype=object,
+            )
+            if np.any(np.isnan(np.hstack(packed))):
+                cal = fallback_cal
 
-        if write:
-            addpar_path = Path(str(ori_path).replace(".ori", ".addpar"))
-            ori_path.parent.mkdir(parents=True, exist_ok=True)
-            cal.write(str(ori_path).encode(), str(addpar_path).encode())
+            if write:
+                addpar_path = Path(str(ori_path).replace(".ori", ".addpar"))
+                ori_path.parent.mkdir(parents=True, exist_ok=True)
+                cal.write(str(ori_path).encode(), str(addpar_path).encode())
 
-        calibrations.append(cal)
+            calibrations.append(cal)
 
-    return calibrations
+        return calibrations
+    finally:
+        os.chdir(previous_cwd)

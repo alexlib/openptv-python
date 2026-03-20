@@ -8,7 +8,7 @@ import filecmp
 import yaml
 
 
-TRACK_DIR = Path(__file__).parent / "track"
+TRACK_DIR = Path(__file__).parent.parent / "testing_folder" / "track"
 
 @pytest.mark.parametrize("yaml_path, desc", [
     # ("parameters_Run1.yaml", "2 cameras, no new particles"),

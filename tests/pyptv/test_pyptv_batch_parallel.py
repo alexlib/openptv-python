@@ -5,7 +5,7 @@ from pyptv import pyptv_batch_parallel
 
 def test_pyptv_batch_parallel(test_data_dir):
     """Test parallel batch processing with test cavity data using YAML parameters"""
-    test_dir = test_data_dir
+    test_dir = test_data_dir / "test_cavity"
     assert test_dir.exists(), f"Test directory {test_dir} not found"
 
     # Path to YAML parameter file
@@ -44,7 +44,7 @@ def test_pyptv_batch_parallel_validation_errors():
 
 def test_pyptv_batch_parallel_single_process(test_data_dir):
     """Test parallel processing with single process (should work like regular batch)"""
-    test_dir = test_data_dir
+    test_dir = test_data_dir / "test_cavity"
     yaml_file = test_dir / "parameters_Run1.yaml"
     
     # Test with single process

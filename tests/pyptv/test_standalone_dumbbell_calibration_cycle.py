@@ -49,7 +49,7 @@ def test_standalone_dumbbell_calibration_cycle(tmp_path: Path):
     start.write(str(ori1).encode("utf-8"), str(ori1).replace(".ori", ".addpar").encode("utf-8"))
 
     # 4) Run the standalone script (as requested) to re-fit extrinsics.
-    script = Path(__file__).parents[1] / "scripts" / "standalone_dumbbell_calibration.py"
+    script = Path(__file__).parents[2] / "scripts" / "standalone_dumbbell_calibration.py"
     proc = subprocess.run(
         [
             sys.executable,

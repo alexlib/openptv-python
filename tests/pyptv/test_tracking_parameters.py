@@ -115,6 +115,7 @@ def test_tracking_parameters_in_batch_run():
         shutil.copytree(test_path, temp_test_path)
         # Print contents of temp_test_path to verify required directories and files
         required_items = ["img", "cal", "plugins", "res", "parameters_Run1.yaml"]
+        (temp_test_path / "res").mkdir(exist_ok=True)
         actual_items = [item.name for item in temp_test_path.iterdir()]
         print(f"Contents of temp_test_path: {actual_items}")
         for req in required_items:
@@ -214,7 +215,10 @@ def test_parameter_propagation_with_corrupted_yaml():
         
         experiment = Experiment()
         experiment.populate_runs(temp_test_path)
-        experiment.set_active(0)
+        corrupted_paramset = next(
+            ps for ps in experiment.paramsets if ps.yaml_path == yaml_file
+        )
+        experiment.set_active(corrupted_paramset)
         
         # This should now fail explicitly instead of using default 0.0 values
         with pytest.raises(KeyError):
@@ -298,7 +302,10 @@ def test_parameter_propagation_with_corrupted_yaml_unit():
         from pyptv.ptv import py_start_proc_c
         experiment = Experiment()
         experiment.populate_runs(temp_test_path)
-        experiment.set_active(0)
+        corrupted_paramset = next(
+            ps for ps in experiment.paramsets if ps.yaml_path == yaml_file
+        )
+        experiment.set_active(corrupted_paramset)
         with pytest.raises(KeyError):
             py_start_proc_c(experiment.pm)
 

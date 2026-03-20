@@ -4,6 +4,7 @@ from pathlib import Path
 from pyptv.experiment import Experiment
 
 HERE = Path(__file__).parent
+TESTING_FOLDER = HERE.parent / 'testing_folder'
 
 def get_track_params_from_yaml(yaml_path):
     pm = ParameterManager()
@@ -23,7 +24,7 @@ REQUIRED_TRACK_PARAMS = [
 ]
 
 @pytest.mark.parametrize("yaml_path", [
-    HERE / 'testing_folder' / 'test_cavity' / 'parameters_Run1.yaml',
+    TESTING_FOLDER / 'test_cavity' / 'parameters_Run1.yaml',
     # Add more YAML files as needed
 ])
 def test_track_params_in_yaml(yaml_path):
@@ -34,7 +35,7 @@ def test_track_params_in_yaml(yaml_path):
         assert track[key] is not None, f"'{key}' is None in 'track' section of {yaml_path}"
 
 @pytest.mark.parametrize("par_dir", [
-    HERE / 'testing_folder' / 'test_cavity' / 'parameters',
+    TESTING_FOLDER / 'test_cavity' / 'parameters',
     # Add more parameter directories as needed
 ])
 def test_track_params_in_par_dir(par_dir):
