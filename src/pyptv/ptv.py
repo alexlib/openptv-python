@@ -45,6 +45,7 @@ from ._backend import (
 from openptv_python._native_compat import should_use_native
 from openptv_python._native_compat import get_multimedia_par
 from openptv_python._native_convert import from_native_calibration
+from openptv_python._native_convert import from_native_target
 
 """
 example from Tracker documentation: 
@@ -590,9 +591,10 @@ def py_correspondences_proc_c(exp, frame=DEFAULT_FRAME_NUM):
     short_file_bases = exp.target_filenames
     print(f"short_file_bases: {short_file_bases}")
     _ensure_target_output_writable(short_file_bases)
-
-    for i_cam in range(exp.num_cams):
-        write_targets(exp.detections[i_cam], short_file_bases[i_cam], frame)
+    native_detections = bool(exp.detections) and type(exp.detections[0]).__module__.startswith("optv.")
+    if not native_detections:
+        for i_cam in range(exp.num_cams):
+            write_targets(exp.detections[i_cam], short_file_bases[i_cam], frame)
         
     print(
         f"Frame {frame} had {[s.shape[1] for s in sorted_pos]!r} correspondences."
@@ -955,30 +957,44 @@ def write_targets(targets: TargetArray, short_file_base: str, frame: int) -> boo
         return True  # No targets to write, but file created successfully
 
     try:
+        target_list = []
+        is_native_targets = type(targets).__module__.startswith("optv.")
+        if num_targets:
+            if is_native_targets:
+                target_list = [from_native_target(targets[index]) for index in range(num_targets)]
+            else:
+                target_list = [targets[index] for index in range(num_targets)]
+
         def _value(field):
             return field() if callable(field) else field
 
-        target_arr = np.array(
-            [
-                (
-                    [
-                        _value(t.pnr),
-                        *t.pos(),
-                        *t.count_pixels(),
-                        t.sum_grey_value(),
-                        _value(t.tnr),
-                    ]
+        def _pos(target):
+            if callable(getattr(target, "pos", None)):
+                return target.pos()
+            return target.x, target.y
+
+        def _pixel_counts(target):
+            if callable(getattr(target, "count_pixels", None)):
+                return target.count_pixels()
+            return target.n, target.nx, target.ny
+
+        def _sum_grey_value(target):
+            if callable(getattr(target, "sum_grey_value", None)):
+                return target.sum_grey_value()
+            return target.sumg
+
+        with open(output_path, "w", encoding="utf-8") as file:
+            file.write(f"{num_targets}\n")
+            for target in target_list:
+                pnr = int(_value(getattr(target, "pnr")))
+                x, y = _pos(target)
+                n, nx, ny = _pixel_counts(target)
+                sumg = int(_sum_grey_value(target))
+                tnr = int(_value(getattr(target, "tnr")))
+                file.write(
+                    f"{pnr:4d} {float(x):9.4f} {float(y):9.4f} "
+                    f"{int(n):5d} {int(nx):5d} {int(ny):5d} {sumg:5d} {tnr:5d}\n"
                 )
-                for t in targets
-            ]
-        )
-        np.savetxt(
-            output_path,
-            target_arr,
-            fmt="%4d %9.4f %9.4f %5d %5d %5d %5d %5d",
-            header=f"{num_targets}",
-            comments="",
-        )
         success = True
     except OSError as exc:
         _raise_output_write_error(output_path, exc)

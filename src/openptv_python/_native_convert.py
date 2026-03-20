@@ -253,9 +253,17 @@ def to_native_target_array(targets: Iterable[Target]):
     if not HAS_NATIVE_TARGETS or optv_tracking_framebuf is None:
         raise RuntimeError("optv TargetArray is not available")
 
-    native_targets = optv_tracking_framebuf.TargetArray()
-    for target in targets:
-        native_targets.append(to_native_target(target))
+    target_count = len(targets)
+    native_targets = optv_tracking_framebuf.TargetArray(target_count)
+    for index in range(target_count):
+        target = targets[index]
+        converted_target = to_native_target(target)
+        native_target = native_targets[index]
+        native_target.set_pnr(int(converted_target.pnr()))
+        native_target.set_tnr(int(converted_target.tnr()))
+        native_target.set_pos(tuple(converted_target.pos()))
+        native_target.set_pixel_counts(*converted_target.count_pixels())
+        native_target.set_sum_grey_value(int(converted_target.sum_grey_value()))
     return native_targets
 
 
