@@ -537,5 +537,4 @@ docs/_build/
 target/
 
 
-
-
+tests/testing_folder/test_cavity/res/*
