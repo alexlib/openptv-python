@@ -18,6 +18,7 @@ from ._native_convert import (
     to_native_calibration,
     to_native_control_par,
     to_native_volume_par,
+    to_native_target_array,
 )
 from .epi import epi_mm
 from .find_candidate import find_candidate
@@ -568,17 +569,23 @@ def py_correspondences(
         native_cals = [to_native_calibration(cal) for cal in calib]
         native_vparam = to_native_volume_par(vparam)
         native_cparam = to_native_control_par(cparam)
+        native_flat_coords = [
+            optv_correspondences.MatchedCoords(
+                to_native_target_array(img_pts[cam]), native_cparam, native_cals[cam]
+            )
+            for cam in range(num_cams)
+        ]
 
         if num_cams == 1:
             return optv_correspondences.single_cam_correspondence(
                 img_pts,
-                flat_coords,
+                native_flat_coords,
                 native_cals,
             )
 
         return optv_correspondences.correspondences(
             img_pts,
-            flat_coords,
+            native_flat_coords,
             native_cals,
             native_vparam,
             native_cparam,

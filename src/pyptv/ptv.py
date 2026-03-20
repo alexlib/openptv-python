@@ -1004,14 +1004,11 @@ def read_targets(short_file_base: str, frame: int) -> TargetArray:
                     raise ValueError(f"Bad format for file: {filename}")
 
                 targ = targs[tix]
-                targ.pnr = int(line[0])
-                targ.x = float(line[1])
-                targ.y = float(line[2])
-                targ.n = int(line[3])
-                targ.nx = int(line[4])
-                targ.ny = int(line[5])
-                targ.sumg = int(line[6])
-                targ.tnr = int(line[7])
+                targ.set_pnr(int(line[0]))
+                targ.set_pos([float(line[1]), float(line[2])])
+                targ.set_pixel_counts(int(line[3]), int(line[4]), int(line[5]))
+                targ.set_sum_grey_value(int(line[6]))
+                targ.set_tnr(int(line[7]))
 
     except IOError as err:
         print(f"Can't open targets file: {filename}")

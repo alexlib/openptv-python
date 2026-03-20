@@ -210,16 +210,53 @@ def to_native_target(target: Target):
     if not HAS_NATIVE_TARGETS or optv_tracking_framebuf is None:
         raise RuntimeError("optv Target is not available")
 
+    if hasattr(target, "pnr") and callable(getattr(target, "pnr", None)):
+        pnr = int(target.pnr())
+    else:
+        pnr = int(getattr(target, "pnr"))
+
+    if hasattr(target, "pos") and callable(getattr(target, "pos", None)):
+        x, y = target.pos()
+    else:
+        x = getattr(target, "x")
+        y = getattr(target, "y")
+
+    if hasattr(target, "count_pixels") and callable(getattr(target, "count_pixels", None)):
+        n, nx, ny = target.count_pixels()
+    else:
+        n = getattr(target, "n")
+        nx = getattr(target, "nx")
+        ny = getattr(target, "ny")
+
+    if hasattr(target, "sum_grey_value") and callable(getattr(target, "sum_grey_value", None)):
+        sumg = target.sum_grey_value()
+    else:
+        sumg = getattr(target, "sumg")
+
+    tnr = getattr(target, "tnr", -1)
+    if callable(tnr):
+        tnr = tnr()
+
     return optv_tracking_framebuf.Target(
-        pnr=target.pnr,
-        x=target.x,
-        y=target.y,
-        n=target.n,
-        nx=target.nx,
-        ny=target.ny,
-        sumg=target.sumg,
-        tnr=target.tnr,
+        pnr=pnr,
+        x=float(x),
+        y=float(y),
+        n=int(n),
+        nx=int(nx),
+        ny=int(ny),
+        sumg=int(sumg),
+        tnr=int(tnr),
     )
+
+
+def to_native_target_array(targets: Iterable[Target]):
+    if not HAS_NATIVE_TARGETS or optv_tracking_framebuf is None:
+        raise RuntimeError("optv TargetArray is not available")
+
+    native_targets = optv_tracking_framebuf.TargetArray()
+    for target in targets:
+        native_targets.append(to_native_target(target))
+    return native_targets
 
 
 def from_native_target(native_target) -> Target:

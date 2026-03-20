@@ -145,7 +145,7 @@ class Target:
 
 def sort_target_y(targets: List[Target]) -> List[Target]:
     """Sort targets by y coordinate."""
-    return sorted(targets, key=lambda t: t.y)
+    return sorted(targets, key=lambda t: _target_pos(t)[1])
 
 
 def _target_pos(target: Target) -> Tuple[float, float]:
@@ -236,7 +236,16 @@ def write_targets(
     try:
         # Convert targets to a 2D numpy array
         target_arr = np.array(
-            [(t.pnr, t.x, t.y, t.n, t.nx, t.ny, t.sumg, t.tnr) for t in targets]
+            [
+                (
+                    _target_pnr(t),
+                    *_target_pos(t),
+                    *t.count_pixels(),
+                    int(t.sum_grey_value()),
+                    int(getattr(t, "tnr", -1)),
+                )
+                for t in targets
+            ]
         )
         # Save the target array to file using savetxt
         np.savetxt(
@@ -264,7 +273,13 @@ def compare_targets(t1: Target, t2: Target):
     -------
     bool: True if all fields are equal, False otherwise.
     """
-    return t1 == t2
+    return (
+        _target_pnr(t1) == _target_pnr(t2)
+        and _target_pos(t1) == _target_pos(t2)
+        and tuple(t1.count_pixels()) == tuple(t2.count_pixels())
+        and int(t1.sum_grey_value()) == int(t2.sum_grey_value())
+        and int(getattr(t1, "tnr", -1)) == int(getattr(t2, "tnr", -1))
+    )
 
 
 @dataclass
