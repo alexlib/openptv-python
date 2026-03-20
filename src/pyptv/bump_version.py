@@ -67,10 +67,11 @@ if __name__ == "__main__":
     parser.add_argument("--patch", action="store_true", help="Bump patch version")
     args = parser.parse_args()
 
-    version_file = Path("pyptv/__version__.py")
-    pyproject_file = Path("pyproject.toml")
+    script_dir = Path(__file__).resolve().parent
+    version_file = script_dir.parent / "openptv_python" / "version.py"
+    pyproject_file = script_dir.parent.parent / "pyproject.toml"
 
-    # Get the current version from __version__.py
+    # Get the current version from the shared version module.
     current_version = get_version_from_file(version_file)
     print(f"Current version is {current_version}")
 
@@ -87,7 +88,7 @@ if __name__ == "__main__":
     new_version = increment_version(current_version, part)
     print(f"New version is {new_version}")
 
-    # Update the version in pyproject.toml
+    # Update the version in pyproject.toml and the shared version module.
     update_pyproject_version(pyproject_file, new_version)
     update_version(version_file, new_version)
 

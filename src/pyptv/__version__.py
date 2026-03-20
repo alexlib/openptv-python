@@ -1,1 +1,1 @@
-__version__ = "0.4.3"
+from openptv_python.version import __version__ as __version__

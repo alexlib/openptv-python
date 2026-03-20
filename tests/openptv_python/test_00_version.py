@@ -1,5 +1,5 @@
-import openptv_python
+from openptv_python.version import __version__
 
 
 def test_version() -> None:
-    assert openptv_python.__version__ != "999"
+    assert __version__ == "0.5.0"

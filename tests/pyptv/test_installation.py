@@ -5,6 +5,7 @@ Test script to verify pyptv installation
 
 import os
 import sys
+from openptv_python.version import __version__ as shared_version
 from optv.calibration import Calibration
 
 
@@ -12,8 +13,10 @@ def test_installation(test_data_dir):
     """Test if pyptv and optv are installed correctly"""
     try:
         import pyptv
+        from pyptv.__version__ import __version__ as pyptv_version
 
-        print(f"PyPTV version: {pyptv.__version__}")
+        print(f"PyPTV version: {pyptv_version}")
+        assert pyptv_version == shared_version == "0.5.0"
     except ImportError:
         print("Error: PyPTV is not installed correctly")
         return False

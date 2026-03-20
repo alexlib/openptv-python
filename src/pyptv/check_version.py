@@ -6,7 +6,7 @@ Script to check the installed version of pyptv and warn if it's not the expected
 import sys
 import importlib.metadata
 
-EXPECTED_VERSION = "0.4.3"  # The version in the local repository
+EXPECTED_VERSION = "0.5.0"  # The unified version in the local repository
 
 
 def check_version():
@@ -23,8 +23,8 @@ def check_version():
             print("\nPossible reasons:")
 
             if installed_version == "0.4.2":
-                print("- You installed from PyPI, which has version 0.4.2")
-                print("- To install the development version (0.4.3), run:")
+                print("- You installed the pre-unification PyPTV release 0.4.2")
+                print("- To install the unified development version (0.5.0), run:")
                 print("  pip install -e /path/to/pyptv/repository")
             else:
                 print("- You might have a different version installed")

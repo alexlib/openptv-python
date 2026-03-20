@@ -1314,6 +1314,7 @@ wheels = [
 
 [[package]]
 name = "openptv-python"
+version = "0.5.0"
 source = { editable = "." }
 dependencies = [
     { name = "numba" },

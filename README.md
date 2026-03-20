@@ -1,42 +1,48 @@
 # openptv-python
 
-Python version of the OpenPTV library - this is *a work in progress*
+Unified Python/OpenPTV repository for the combined `openptv_python` core library and `pyptv` GUI.
 
-## What This Repo Provides
+Current repository version: 0.5.0
 
-`openptv-python` keeps the Python API as the main interface and combines three
-execution modes behind that API:
+## Overview
 
-- **Pure Python**: the reference implementation and the easiest path for reading,
-  debugging, and extending the code. Always available as fallback.
-- **Python + Numba**: several hot kernels are JIT-compiled automatically on first
-  use, so the Python implementation still benefits from acceleration.
-- **Native `optv` bindings** (default): selected operations reuse the native OpenPTV
-  implementation. Installed by default on supported platforms (Linux, macOS, Windows).
+This repository now exposes one shared API and one shared version stream. The main pieces are:
 
-At the moment, automatic native delegation is implemented for image
-preprocessing and full-frame target recognition. The rest of the library keeps
-the same Python API and remains usable even when those native paths are not in
-use.
+- `openptv_python`: the Python library layer, used for pure-Python execution, Numba-accelerated kernels, and shared parameter/data handling.
+- `pyptv`: the GUI and batch-processing layer, built on top of the same Python API.
+- `optv`: native bindings used where available for delegated operations such as image preprocessing and full-frame target recognition.
 
-If `optv` is not available on your platform, the package automatically falls back
-to pure Python/Numba implementations without any configuration needed.
+The current setup is intentionally structured so that the same codebase can run in three modes:
 
-## How this is started
+1. Pure Python for readability, debugging, and visual inspection.
+2. Pure Python plus Numba for accelerated kernels where available.
+3. Native `optv` delegation for selected operations when the bindings are installed.
 
-This work started from the https://github.com/OpenPTV/openptv/tree/pure_python branch. It now serves as the single repository for the Python core library and the GUI layer.
+The GUI version shown in PyPTV comes from the shared version module in `src/openptv_python/version.py`.
 
-## Supported Python Versions
+## Versioning
 
-The project currently supports Python `>=3.11,<3.14`.
+Versioning is now centralized:
+
+- Canonical version source: [src/openptv_python/version.py](src/openptv_python/version.py)
+- Package version: 0.5.0
+- Release boundary: this is the first combined version after merging the older `openptv_python` and `pyptv` package streams
+
+To bump the version, run:
+
+```bash
+python src/pyptv/bump_version.py --patch
+```
+
+Use `--minor` or `--major` for larger increments. The script updates the shared version module and `pyproject.toml` together.
 
 ## Installation
 
-### Default user install
+The project supports Python `>=3.11,<3.14`.
 
-#### Recommended: uv
+### Recommended: uv
 
-Create the environment and install the runtime dependencies:
+Runtime install:
 
 ```bash
 uv venv
@@ -44,31 +50,13 @@ source .venv/bin/activate
 uv sync
 ```
 
-This gives you the standard runtime stack: NumPy, SciPy, Numba, YAML, and the native `optv` bindings for accelerated image preprocessing and target recognition.
-
-If you also want the GUI application, install the GUI extra:
+GUI extras:
 
 ```bash
 uv sync --extra gui
 ```
 
-#### Alternative: pip
-
-```bash
-conda create -n openptv-python -c conda-forge python=3.12
-conda activate openptv-python
-pip install .
-```
-
-Optional GUI application:
-
-```bash
-pip install ".[gui]"
-```
-
-### Developer install
-
-#### Recommended: uv
+Developer setup:
 
 ```bash
 uv venv
@@ -76,147 +64,65 @@ source .venv/bin/activate
 uv sync --extra dev
 ```
 
-#### Alternative: conda + pip
+### Alternative: pip
 
 ```bash
 conda create -n openptv-python -c conda-forge python=3.12
 conda activate openptv-python
-pip install -e ".[dev]"
+pip install .
 ```
 
-### What gets installed
-
-- The default install includes `optv` bindings for automatic native delegation on supported platforms (Linux, macOS, Windows).
-- The optional `gui` extra adds the PyPTV GUI and its runtime dependencies.
-- The optional `dev` extra adds test, docs, typing, pre-commit, and GUI tooling for contributors.
-- If `optv` fails to install on your platform, the package falls back to pure Python/Numba implementations automatically.
-
-## Backend Behavior
-
-### Pure Python backend
-
-This is the base implementation for the whole library. It is always the source
-of truth for the Python API and remains the fallback behavior for code paths
-that are not delegated to `optv`.
-
-### Python + Numba backend
-
-Numba accelerates selected computational kernels inside the Python
-implementation. This is automatic; there is no separate API to enable it.
-Expect the first call to a JIT-compiled function to be slower due to
-compilation, with later calls running faster.
-
-### Native `optv` backend
-
-When `optv` imports successfully, `openptv-python` automatically reuses native
-implementations for:
-
-- image preprocessing
-- full-frame target recognition / segmentation
-
-These native paths are validated against the Python implementation by parity
-tests, so results stay backend-independent.
-
-### Backend Capability Table
-
-| Operation | Pure Python | Python + Numba | Native `optv` |
-| --- | --- | --- | --- |
-| Image preprocessing | Yes | Yes | Yes, automatic delegation |
-| Target recognition / segmentation | Yes | Yes | Yes, automatic delegation |
-| Point reconstruction | Yes | Partial internal kernels | Not used by default |
-| Correspondence search / stereo matching | Yes | Partial internal kernels | Not used by default |
-| Tracking | Yes | Partial internal kernels | Not used by default |
-| Sequence parameter I/O | Yes | No | Available in native bindings |
-
-`Not used by default` means the native path exists in benchmarks or conversion
-helpers, but the regular `openptv-python` runtime path still uses the Python
-implementation unless that operation is explicitly integrated later.
-
-## Getting Started
-
-### 1. Install the project
-
-Use one of the installation methods above.
-
-### 2. Verify imports
+GUI extras:
 
 ```bash
-uv run python - <<'PY'
-import openptv_python
-import numba
-import optv
-
-print("optv ok", optv.__version__)
-print("openptv_python ok")
-print("numba ok", numba.__version__)
-PY
+pip install "[gui]"
 ```
 
-### 3. Start using the Python API
+Developer extras:
+
+```bash
+pip install "[dev]"
+```
+
+## Usage
+
+### Python API
 
 ```python
->>> import openptv_python
+import openptv_python
 
+print(openptv_python.__version__)
 ```
 
-### 4. Run the test suite
+### GUI
 
 ```bash
-uv run make
+uv run pyptv
 ```
 
-Stress and performance tests are part of the default suite now. If you need a
-faster validation pass locally, you can skip them explicitly:
+The GUI is versioned from the same shared source as the library.
+
+## Documentation
+
+Detailed guides live under [docs/](docs/), especially the PyPTV guides in [docs/pyptv](docs/pyptv/README.md).
+
+## Testing
+
+Run the focused test suites with:
 
 ```bash
-OPENPTV_SKIP_STRESS_BENCHMARKS=1 uv run make
+uv run --with pytest pytest -q tests/openptv_python tests/pyptv
 ```
 
-### Workflow for developers/contributors
+The repository also contains test datasets in [tests/testing_folder](tests/testing_folder/).
 
-Recommended contributor workflow with `uv`:
+## Repository Structure
 
-```bash
-uv venv
-source .venv/bin/activate
-make env-update
-```
+- `src/openptv_python/`: shared Python library code and canonical version module
+- `src/pyptv/`: GUI, batch tools, and compatibility helpers
+- `docs/`: Sphinx documentation
+- `tests/`: library, GUI, and fixture tests
 
-This keeps the local environment synced to the locked developer dependency set.
+## License
 
-If you prefer the conda workflow instead:
-
-```bash
-conda create -n openptv-python -c conda-forge python=3.12
-conda activate openptv-python
-make conda-env-update
-```
-
-Before pushing to GitHub, use the developer install above and then run the
-following commands:
-
-1. Update the environment: `make env-update` by default, or `make conda-env-update` if you are using the conda workflow
-1. If you are using pip instead of uv, install the editable developer environment: `pip install -e ".[dev]"`
-1. Sync with the latest [template](https://github.com/ecmwf-projects/cookiecutter-conda-package) (optional): `make template-update`
-1. Run quality assurance checks: `make qa`
-1. Run tests: `make unit-tests`
-1. Run the static type checker: `make type-check`
-1. Build the documentation (see [Sphinx tutorial](https://www.sphinx-doc.org/en/master/tutorial/)): `make docs-build`
-
-### License
-
-```
-Copyright 2023, OpenPTV consortium.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-```
+Apache License, Version 2.0.

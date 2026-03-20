@@ -5,6 +5,16 @@ All notable changes to PyPTV are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-03-20
+
+### Changed
+- Unified the old `openptv_python` and `pyptv` version streams into a single shared version source
+- Updated the GUI and helper scripts to read the same canonical version value
+
+### Notes
+- This is the first combined release after consolidating the package split into one API surface
+- The version displayed in the PyPTV GUI now comes from the shared repository version module
+
 ## [0.4.3] - 2026-03-13
 
 ### Added

@@ -1,6 +1,6 @@
 [build-system]
 build-backend = "setuptools.build_meta"
-requires = ["setuptools>=64", "setuptools_scm>=8"]
+requires = ["setuptools>=64"]
 
 [project]
 classifiers = [
@@ -22,9 +22,9 @@ dependencies = [
   "scipy>=1.17.1"
 ]
 description = "Python version of the OpenPTV library"
-dynamic = ["version"]
 license = {file = "LICENSE"}
 name = "openptv-python"
+version = "0.5.0"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 
@@ -127,10 +127,3 @@ packages = ["openptv_python", "pyptv"]
 openptv_python = "src/openptv_python"
 pyptv = "src/pyptv"
 
-[tool.setuptools_scm]
-fallback_version = "999"
-write_to = "src/openptv_python/version.py"
-write_to_template = '''
-# Do not change! Do not track in version control!
-__version__ = "{version}"
-'''
