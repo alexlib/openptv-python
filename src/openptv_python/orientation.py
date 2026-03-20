@@ -9,6 +9,7 @@ from numba import njit, prange
 from openptv_python.constants import COORD_UNUSED
 
 from .calibration import Calibration
+from ._native_compat import get_multimedia_par as _get_multimedia_par
 from .constants import CONVERGENCE, IDT, NPAR, NUM_ITER, POS_INF
 from .epi import epi_mm_2D
 from .imgcoord import image_coordinates, img_coord
@@ -248,7 +249,7 @@ def num_deriv_exterior(
 
     # print(f"exterior = {cal.ext_par}")
     cal.update_rotation_matrix()
-    xs, ys = img_coord(pos, cal, cpar.mm)
+    xs, ys = img_coord(pos, cal, _get_multimedia_par(cpar))
     # print(f"  xs = {xs}, ys = {ys}")
 
     for pd in range(6):
@@ -257,7 +258,7 @@ def num_deriv_exterior(
         if pd > 2:
             cal.update_rotation_matrix()
 
-        xpd, ypd = img_coord(pos, cal, cpar.mm)
+        xpd, ypd = img_coord(pos, cal, _get_multimedia_par(cpar))
         # print(f" xpd = {xpd}, ypd = {ypd}")
         x_ders[pd] = (xpd - xs) / steps[pd]
         y_ders[pd] = (ypd - ys) / steps[pd]
@@ -423,7 +424,7 @@ def orient(
 
             # Projected 2D position on sensor of corresponding known point
             cal.update_rotation_matrix()
-            xp, yp = img_coord(fix[i], cal, cpar.mm)
+            xp, yp = img_coord(fix[i], cal, _get_multimedia_par(cpar))
 
             # derivatives of distortion parameters
             r = np.sqrt(xp * xp + yp * yp)
@@ -470,7 +471,7 @@ def orient(
             # Num. deriv. of projection coords over sensor distance from PP
             cal.int_par.cc += dm
             cal.update_rotation_matrix()
-            xpd, ypd = img_coord(fix[i], cal, cpar.mm)
+            xpd, ypd = img_coord(fix[i], cal, _get_multimedia_par(cpar))
             X[n][6] = (xpd - xp) / dm
             X[n + 1][6] = (ypd - yp) / dm
             # for i in range(len(fix)):
@@ -487,7 +488,7 @@ def orient(
             cal.glass_par[0] += e1[0] * nGl * dm
             cal.glass_par[1] += e1[1] * nGl * dm
             cal.glass_par[2] += e1[2] * nGl * dm
-            xpd, ypd = img_coord(fix[i], cal, cpar.mm)
+            xpd, ypd = img_coord(fix[i], cal, _get_multimedia_par(cpar))
             X[n][16] = (xpd - xp) / dm
             X[n + 1][16] = (ypd - yp) / dm
             # al -= dm
@@ -499,7 +500,7 @@ def orient(
             cal.glass_par[0] += e2[0] * nGl * dm
             cal.glass_par[1] += e2[1] * nGl * dm
             cal.glass_par[2] += e2[2] * nGl * dm
-            xpd, ypd = img_coord(fix[i], cal, cpar.mm)
+            xpd, ypd = img_coord(fix[i], cal, _get_multimedia_par(cpar))
             X[n][17] = (xpd - xp) / dm
             X[n + 1][17] = (ypd - yp) / dm
             # be -= dm
@@ -511,7 +512,7 @@ def orient(
             cal.glass_par[0] += cal.glass_par[0] * nGl * dm
             cal.glass_par[1] += cal.glass_par[1] * nGl * dm
             cal.glass_par[2] += cal.glass_par[2] * nGl * dm
-            xpd, ypd = img_coord(fix[i], cal, cpar.mm)
+            xpd, ypd = img_coord(fix[i], cal, _get_multimedia_par(cpar))
             X[n][18] = (xpd - xp) / dm
             X[n + 1][18] = (ypd - yp) / dm
             # ga -= dm
@@ -732,7 +733,7 @@ def raw_orient(
             xc, yc = pixel_to_metric(pix[i].x, pix[i].y, cpar)
             pos = fix[i]
             cal.update_rotation_matrix()
-            xp, yp = img_coord(pos, cal, cpar.mm)
+            xp, yp = img_coord(pos, cal, _get_multimedia_par(cpar))
             X[n], X[n + 1] = num_deriv_exterior(cal, cpar, dm, drad, pos)
             y[n] = xc - xp
             y[n + 1] = yc - yp
@@ -1346,7 +1347,7 @@ def initialize_bundle_adjustment_points(
                 "Each point must be observed by at least two cameras for bundle adjustment"
             )
         ray_convergence[pt], points[pt] = point_position(
-            metric_obs[pt], num_cams, cpar.mm, cals
+            metric_obs[pt], num_cams, _get_multimedia_par(cpar), cals
         )
 
     return points, ray_convergence
@@ -1374,7 +1375,7 @@ def reprojection_errors(
             obs = observed_pixels[pt, cam]
             if not np.all(np.isfinite(obs)):
                 continue
-            x_metric, y_metric = img_coord(points_3d[pt], cals[cam], cpar.mm)
+            x_metric, y_metric = img_coord(points_3d[pt], cals[cam], _get_multimedia_par(cpar))
             proj = metric_to_pixel(x_metric, y_metric, cpar)
             residuals[pt, cam] = np.asarray(proj, dtype=np.float64) - obs
 
@@ -1830,7 +1831,7 @@ def multi_camera_bundle_adjustment(
                 continue
 
             projected_pixels = arr_metric_to_pixel(
-                image_coordinates(points[point_indices], trial_cals[cam], cpar.mm),
+                image_coordinates(points[point_indices], trial_cals[cam], _get_multimedia_par(cpar)),
                 cpar,
             )
             observed = observed_pixels[point_indices, cam, :]
@@ -2018,8 +2019,8 @@ def guarded_two_step_bundle_adjustment(
             reference_pixels = []
             candidate_pixels = []
             for point in reference_points:
-                ref_x, ref_y = img_coord(point, reference_cal, cpar.mm)
-                cand_x, cand_y = img_coord(point, candidate_cal, cpar.mm)
+                ref_x, ref_y = img_coord(point, reference_cal, _get_multimedia_par(cpar))
+                cand_x, cand_y = img_coord(point, candidate_cal, _get_multimedia_par(cpar))
                 reference_pixels.append(metric_to_pixel(ref_x, ref_y, cpar))
                 candidate_pixels.append(metric_to_pixel(cand_x, cand_y, cpar))
 
@@ -2080,7 +2081,7 @@ def guarded_two_step_bundle_adjustment(
         )
         for camera_index, cal in enumerate(candidate_cals):
             projected_pixels[:, camera_index, :] = arr_metric_to_pixel(
-                image_coordinates(candidate_points, cal, cpar.mm),
+                image_coordinates(candidate_points, cal, _get_multimedia_par(cpar)),
                 cpar,
             )
 
@@ -2750,8 +2751,8 @@ def alternating_bundle_adjustment(
             reference_pixels = []
             candidate_pixels = []
             for point in reference_points:
-                ref_x, ref_y = img_coord(point, reference_cal, cpar.mm)
-                cand_x, cand_y = img_coord(point, candidate_cal, cpar.mm)
+                ref_x, ref_y = img_coord(point, reference_cal, _get_multimedia_par(cpar))
+                cand_x, cand_y = img_coord(point, candidate_cal, _get_multimedia_par(cpar))
                 reference_pixels.append(metric_to_pixel(ref_x, ref_y, cpar))
                 candidate_pixels.append(metric_to_pixel(cand_x, cand_y, cpar))
 
@@ -2819,7 +2820,7 @@ def alternating_bundle_adjustment(
         )
         for camera_index, cal in enumerate(candidate_cals):
             projected_pixels[:, camera_index, :] = arr_metric_to_pixel(
-                image_coordinates(candidate_points, cal, cpar.mm),
+                image_coordinates(candidate_points, cal, _get_multimedia_par(cpar)),
                 cpar,
             )
 

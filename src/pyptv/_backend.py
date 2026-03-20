@@ -60,6 +60,23 @@ if HAS_OPTV:
     from optv.parameters import TargetParams
     from optv.parameters import TrackingParams
     from optv.parameters import VolumeParams
+    from optv.epipolar import epipolar_curve
+    from optv.image_processing import preprocess_image
+    from optv.imgcoord import image_coordinates
+    from optv.orientation import (
+        external_calibration,
+        full_calibration,
+        match_detection_to_ref,
+        multi_cam_point_positions,
+        point_positions,
+    )
+    from optv.segmentation import target_recognition
+    from optv.tracker import Tracker, default_naming
+    from optv.tracking_framebuf import Frame, Target, TargetArray
+    from optv.transforms import (
+        convert_arr_metric_to_pixel,
+        convert_arr_pixel_to_metric,
+    )
 else:
     from openptv_python.calibration import Calibration
     from openptv_python.parameters import ControlPar as ControlParams
@@ -67,26 +84,28 @@ else:
     from openptv_python.parameters import TargetPar as TargetParams
     from openptv_python.parameters import TrackPar as TrackingParams
     from openptv_python.parameters import VolumePar as VolumeParams
-from openptv_python.image_processing import preprocess_image
-from openptv_python.segmentation import target_recognition
+    from openptv_python.epi import epipolar_curve
+    from openptv_python.image_processing import preprocess_image
+    from openptv_python.imgcoord import image_coordinates, img_coord
+    from openptv_python.orientation import (
+        external_calibration,
+        full_calibration,
+        match_detection_to_ref,
+        multi_cam_point_positions,
+        point_positions,
+    )
+    from openptv_python.segmentation import target_recognition
+    from openptv_python.tracking_frame_buf import Frame, Target, TargetArray
+    from openptv_python.track import Tracker, default_naming
+    from openptv_python.trafo import arr_pixel_to_metric as convert_arr_pixel_to_metric
+    from openptv_python.trafo import arr_metric_to_pixel as convert_arr_metric_to_pixel
 from openptv_python.correspondences import (
     MatchedCoords,
     py_correspondences,
     correspondences,
 )
-from openptv_python.orientation import (
-    point_positions,
-    multi_cam_point_positions,
-    external_calibration,
-    full_calibration,
-    match_detection_to_ref,
-)
-from openptv_python.tracking_frame_buf import TargetArray, Target, Frame, sort_target_y
-from openptv_python.track import Tracker, default_naming
-from openptv_python.trafo import arr_pixel_to_metric as convert_arr_pixel_to_metric
-from openptv_python.trafo import arr_metric_to_pixel as convert_arr_metric_to_pixel
-from openptv_python.imgcoord import image_coordinates, img_coord
-from openptv_python.epi import epipolar_curve
+from openptv_python.tracking_frame_buf import sort_target_y
+from openptv_python.imgcoord import img_coord
 
 
 # =============================================================================

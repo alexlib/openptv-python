@@ -12,6 +12,22 @@ from .vec_utils import (
 )
 
 
+def _mm_d(mm: MultimediaPar) -> list[float]:
+    return list(mm.get_d()) if hasattr(mm, "get_d") else list(mm.d)
+
+
+def _mm_n1(mm: MultimediaPar) -> float:
+    return float(mm.get_n1()) if hasattr(mm, "get_n1") else float(mm.n1)
+
+
+def _mm_n2(mm: MultimediaPar) -> list[float]:
+    return list(mm.get_n2()) if hasattr(mm, "get_n2") else list(mm.n2)
+
+
+def _mm_n3(mm: MultimediaPar) -> float:
+    return float(mm.get_n3()) if hasattr(mm, "get_n3") else float(mm.n3)
+
+
 def ray_tracing(
     x: float, y: float, cal: Calibration, mm: MultimediaPar
 ) -> Tuple[np.ndarray, np.ndarray]:
@@ -66,10 +82,10 @@ def ray_tracing(
         distortion_matrix,
         primary_point,
         glass,
-        mm.d[0],
-        mm.n1,
-        mm.n2[0],
-        mm.n3,
+        _mm_d(mm)[0],
+        _mm_n1(mm),
+        _mm_n2(mm)[0],
+        _mm_n3(mm),
     )
 
 

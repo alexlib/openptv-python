@@ -39,6 +39,29 @@ points:
 - `openptv_python.image_processing.preprocess_image()`
 - `openptv_python.segmentation.targ_rec()`
 
+## Native optv submodules
+
+When `optv` is installed, the backend can use these submodules directly:
+
+| optv submodule | Used for |
+| --- | --- |
+| `optv.calibration` | Calibration objects and calibration-file handling |
+| `optv.correspondences` | Stereo correspondences and single-camera correspondences |
+| `optv.epipolar` | Epipolar-curve generation |
+| `optv.image_processing` | High-pass preprocessing |
+| `optv.imgcoord` | Image-coordinate conversion helpers |
+| `optv.orientation` | Point reconstruction and calibration routines |
+| `optv.parameters` | Control, sequence, target, tracking, and volume parameters |
+| `optv.segmentation` | Target recognition |
+| `optv.tracker` | Tracking orchestration |
+| `optv.tracking_framebuf` | Targets, target arrays, frames, and target-file IO |
+| `optv.transforms` | Pixel/metric conversion helpers |
+| `optv.version` | Package version metadata |
+
+The current backend preference is to route to these native modules whenever the
+`optv` engine is selected and the submodule is available, while preserving the
+Python compatibility path as the fallback.
+
 The rest of the 3D-PTV pipeline is already callable from Python without native
 bindings, and the stress suite shows that several later stages also have native
 parity paths available:

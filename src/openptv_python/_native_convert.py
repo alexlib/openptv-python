@@ -16,7 +16,7 @@ from ._native_compat import (
     optv_tracking_framebuf,
 )
 from .calibration import Calibration
-from .parameters import ControlPar, TargetPar
+from .parameters import ControlPar, SequencePar, TargetPar, TrackPar, VolumePar
 from .tracking_frame_buf import Target
 
 
@@ -111,6 +111,77 @@ def to_native_control_par(cpar: ControlPar):
     for cam_index, cal_img_base_name in enumerate(cpar.cal_img_base_name):
         native.set_cal_img_base_name(cam_index, cal_img_base_name)
 
+    return native
+
+
+def to_native_volume_par(vpar: VolumePar):
+    if not isinstance(vpar, VolumePar):
+        return vpar
+
+    parameters_module = _optv_parameters_module()
+    native = parameters_module.VolumeParams()
+    native.set_X_lay(list(vpar.get_X_lay()))
+    native.set_Zmin_lay(list(vpar.get_Zmin_lay()))
+    native.set_Zmax_lay(list(vpar.get_Zmax_lay()))
+    native.set_cn(vpar.get_cn())
+    native.set_cnx(vpar.get_cnx())
+    native.set_cny(vpar.get_cny())
+    native.set_csumg(vpar.get_csumg())
+    native.set_corrmin(vpar.get_corrmin())
+    native.set_eps0(vpar.get_eps0())
+    return native
+
+
+def to_native_sequence_par(spar: SequencePar):
+    if not isinstance(spar, SequencePar):
+        return spar
+
+    parameters_module = _optv_parameters_module()
+
+    try:
+        native = parameters_module.SequenceParams(num_cams=spar.get_num_cams())
+    except TypeError:
+        native = parameters_module.SequenceParams()
+
+    native.set_first(spar.get_first())
+    native.set_last(spar.get_last())
+
+    img_base_name = spar.get_img_base_name()
+    if isinstance(img_base_name, (list, tuple)):
+        try:
+            native.set_img_base_name(list(img_base_name))
+        except TypeError:
+            for cam_index, base_name in enumerate(img_base_name):
+                native.set_img_base_name(cam_index, base_name)
+
+    return native
+
+
+def to_native_track_par(tpar: TrackPar):
+    if not isinstance(tpar, TrackPar):
+        return tpar
+
+    parameters_module = _optv_parameters_module()
+    native = parameters_module.TrackingParams()
+    for attr_name in (
+        "dvxmin",
+        "dvxmax",
+        "dvymin",
+        "dvymax",
+        "dvzmin",
+        "dvzmax",
+        "dangle",
+        "dacc",
+        "add",
+        "dsumg",
+        "dn",
+        "dnx",
+        "dny",
+    ):
+        getter = getattr(tpar, f"get_{attr_name}", None)
+        setter = getattr(native, f"set_{attr_name}", None)
+        if callable(getter) and callable(setter):
+            setter(getter())
     return native
 
 

@@ -13,6 +13,12 @@ from .constants import (
     PT_UNUSED,
 )
 from ._native_compat import get_multimedia_par, get_num_cams
+from ._native_compat import HAS_NATIVE_CORRESPONDENCES, optv_correspondences, should_use_native
+from ._native_convert import (
+    to_native_calibration,
+    to_native_control_par,
+    to_native_volume_par,
+)
 from .epi import epi_mm
 from .find_candidate import find_candidate
 from .parameters import ControlPar, VolumePar
@@ -557,6 +563,27 @@ def py_correspondences(
         previous 3).
     """
     num_cams = get_num_cams(cparam)
+
+    if should_use_native("correspondences") and HAS_NATIVE_CORRESPONDENCES and optv_correspondences is not None:
+        native_cals = [to_native_calibration(cal) for cal in calib]
+        native_vparam = to_native_volume_par(vparam)
+        native_cparam = to_native_control_par(cparam)
+
+        if num_cams == 1:
+            return optv_correspondences.single_cam_correspondence(
+                img_pts,
+                flat_coords,
+                native_cals,
+            )
+
+        return optv_correspondences.correspondences(
+            img_pts,
+            flat_coords,
+            native_cals,
+            native_vparam,
+            native_cparam,
+        )
+
     frm = Frame(num_cams, MAX_TARGETS)
 
     # Special case of a single camera, follow the single_cam_correspondence docstring

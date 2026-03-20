@@ -42,6 +42,7 @@ from ._backend import (
     sort_target_y,
     target_recognition,
 )
+from openptv_python._native_compat import should_use_native
 from openptv_python._native_compat import get_multimedia_par
 from openptv_python._native_convert import from_native_calibration
 
@@ -569,9 +570,14 @@ def py_detection_proc_c(
 def py_correspondences_proc_c(exp, frame=DEFAULT_FRAME_NUM):
     """Provides correspondences
     """
-    legacy_cals = [from_native_calibration(cal) for cal in exp.cals]
-    legacy_cpar = _to_python_cpar(exp.cpar)
-    legacy_vpar = _to_python_vpar(exp.vpar)
+    if should_use_native("correspondences"):
+        legacy_cals = exp.cals
+        legacy_cpar = exp.cpar
+        legacy_vpar = exp.vpar
+    else:
+        legacy_cals = [from_native_calibration(cal) for cal in exp.cals]
+        legacy_cpar = _to_python_cpar(exp.cpar)
+        legacy_vpar = _to_python_vpar(exp.vpar)
     sorted_pos, sorted_corresp, num_targs = correspondences(
         exp.detections,
         exp.corrected,
@@ -606,9 +612,14 @@ def py_determination_proc_c(
 ) -> None:
     """Calculate 3D positions from 2D correspondences and save to file.
     """
-    legacy_cpar = _to_python_cpar(cpar)
-    legacy_vpar = _to_python_vpar(vpar)
-    legacy_cals = [from_native_calibration(cal) for cal in cals]
+    if should_use_native("orientation"):
+        legacy_cpar = cpar
+        legacy_vpar = vpar
+        legacy_cals = cals
+    else:
+        legacy_cpar = _to_python_cpar(cpar)
+        legacy_vpar = _to_python_vpar(vpar)
+        legacy_cals = [from_native_calibration(cal) for cal in cals]
     concatenated_pos = np.concatenate(sorted_pos, axis=1)
     concatenated_corresp = np.concatenate(sorted_corresp, axis=1)
 

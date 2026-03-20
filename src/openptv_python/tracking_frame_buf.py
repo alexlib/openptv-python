@@ -113,6 +113,10 @@ class Target:
         """Set sum of grey values."""
         self.sumg = sumg
 
+    def set_tnr(self, tnr: int):
+        """Set tracking number."""
+        self.tnr = tnr
+
     def sum_grey_value(self):
         """Return sum of grey values."""
         return self.sumg
@@ -142,6 +146,20 @@ class Target:
 def sort_target_y(targets: List[Target]) -> List[Target]:
     """Sort targets by y coordinate."""
     return sorted(targets, key=lambda t: t.y)
+
+
+def _target_pos(target: Target) -> Tuple[float, float]:
+    if hasattr(target, "pos") and callable(getattr(target, "pos")):
+        x, y = target.pos()
+        return float(x), float(y)
+    return float(target.x), float(target.y)
+
+
+def _target_pnr(target: Target) -> int:
+    value = getattr(target, "pnr", PT_UNUSED)
+    if callable(value):
+        value = value()
+    return int(value)
 
 
 class TargetArray(list):
@@ -923,11 +941,14 @@ def match_coords(
     for tnum, targ in enumerate(targs):
         # targ = targs[tnum]
         if reset_numbers:
-            targ.pnr = tnum
+            if hasattr(targ, "set_pnr") and callable(getattr(targ, "set_pnr")):
+                targ.set_pnr(tnum)
+            else:
+                targ.pnr = tnum
 
-        x, y = pixel_to_metric(targ.x, targ.y, cpar)
+        x, y = pixel_to_metric(*_target_pos(targ), cpar)
         matched_coords[tnum].x, matched_coords[tnum].y = dist_to_flat(x, y, cal, tol)
-        matched_coords[tnum].pnr = targ.pnr
+        matched_coords[tnum].pnr = _target_pnr(targ)
 
     matched_coords.sort(order="x")
 

@@ -26,19 +26,31 @@ def _optional_import(module_name: str) -> ModuleType | None:
 
 
 optv_calibration = _optional_import("optv.calibration")
+optv_correspondences = _optional_import("optv.correspondences")
+optv_epipolar = _optional_import("optv.epipolar")
 optv_image_processing = _optional_import("optv.image_processing")
+optv_imgcoord = _optional_import("optv.imgcoord")
+optv_orientation = _optional_import("optv.orientation")
 optv_parameters = _optional_import("optv.parameters")
 optv_segmentation = _optional_import("optv.segmentation")
+optv_tracker = _optional_import("optv.tracker")
 optv_tracking_framebuf = _optional_import("optv.tracking_framebuf")
+optv_transforms = _optional_import("optv.transforms")
 
 HAS_OPTV = any(
     module is not None
     for module in (
         optv_calibration,
+        optv_correspondences,
+        optv_epipolar,
         optv_image_processing,
+        optv_imgcoord,
+        optv_orientation,
         optv_parameters,
         optv_segmentation,
+        optv_tracker,
         optv_tracking_framebuf,
+        optv_transforms,
     )
 )
 
@@ -48,6 +60,38 @@ HAS_NATIVE_PREPROCESS = (
     and optv_parameters is not None
     and hasattr(optv_parameters, "ControlParams")
 )
+
+HAS_NATIVE_CORRESPONDENCES = (
+    optv_correspondences is not None
+    and hasattr(optv_correspondences, "correspondences")
+    and hasattr(optv_correspondences, "single_cam_correspondence")
+    and hasattr(optv_correspondences, "MatchedCoords")
+)
+
+HAS_NATIVE_ORIENTATION = (
+    optv_orientation is not None
+    and hasattr(optv_orientation, "point_positions")
+    and hasattr(optv_orientation, "multi_cam_point_positions")
+    and hasattr(optv_orientation, "external_calibration")
+    and hasattr(optv_orientation, "full_calibration")
+    and hasattr(optv_orientation, "match_detection_to_ref")
+)
+
+HAS_NATIVE_TRANSFORMS = (
+    optv_transforms is not None
+    and hasattr(optv_transforms, "convert_arr_pixel_to_metric")
+    and hasattr(optv_transforms, "convert_arr_metric_to_pixel")
+)
+
+HAS_NATIVE_IMGCOORD = (
+    optv_imgcoord is not None
+    and hasattr(optv_imgcoord, "image_coordinates")
+    and hasattr(optv_imgcoord, "flat_image_coordinates")
+)
+
+HAS_NATIVE_TRACKER = optv_tracker is not None and hasattr(optv_tracker, "Tracker")
+
+HAS_NATIVE_EPIPOLAR = optv_epipolar is not None and hasattr(optv_epipolar, "epipolar_curve")
 
 HAS_NATIVE_SEGMENTATION = (
     optv_segmentation is not None
@@ -224,14 +268,32 @@ def should_use_native(feature_name: str | None = None) -> bool:
     if feature_name in {None, "", "preprocess_image"}:
         return HAS_NATIVE_PREPROCESS
 
+    if feature_name == "correspondences":
+        return HAS_NATIVE_CORRESPONDENCES
+
     if feature_name == "target_recognition":
         return HAS_NATIVE_SEGMENTATION
+
+    if feature_name in {"orientation", "point_positions"}:
+        return HAS_NATIVE_ORIENTATION
 
     if feature_name == "calibration":
         return HAS_NATIVE_CALIBRATION
 
+    if feature_name == "transforms":
+        return HAS_NATIVE_TRANSFORMS
+
+    if feature_name == "imgcoord":
+        return HAS_NATIVE_IMGCOORD
+
     if feature_name == "targets":
         return HAS_NATIVE_TARGETS
+
+    if feature_name == "tracker":
+        return HAS_NATIVE_TRACKER
+
+    if feature_name == "epipolar":
+        return HAS_NATIVE_EPIPOLAR
 
     return HAS_OPTV
 

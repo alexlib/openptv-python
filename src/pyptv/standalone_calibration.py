@@ -13,6 +13,7 @@ import numpy as np
 
 from openptv_python.calibration import Calibration
 from openptv_python.orientation import external_calibration, full_calibration
+from openptv_python.parameters import OrientPar
 from openptv_python.tracking_frame_buf import TargetArray
 
 from .parameter_manager import ParameterManager
@@ -43,6 +44,24 @@ def get_flags_from_yaml(pm: ParameterManager) -> list[str]:
     if not isinstance(orient, dict):
         return []
     return [name for name in NAMES if _as_bool(orient.get(name, False))]
+
+
+def _orient_par_from_flags(flags: Sequence[str]) -> OrientPar:
+    orient = OrientPar()
+    enabled = set(flags)
+
+    orient.ccflag = int("cc" in enabled)
+    orient.xhflag = int("xh" in enabled)
+    orient.yhflag = int("yh" in enabled)
+    orient.k1flag = int("k1" in enabled)
+    orient.k2flag = int("k2" in enabled)
+    orient.k3flag = int("k3" in enabled)
+    orient.p1flag = int("p1" in enabled)
+    orient.p2flag = int("p2" in enabled)
+    orient.scxflag = int("scale" in enabled)
+    orient.sheflag = int("shear" in enabled)
+
+    return orient
 
 
 def load_points_npz(npz_path: Path, *, num_cams: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -200,7 +219,7 @@ def run_standalone_calibration(
             np.asarray(xyz, dtype=float),
             targs,
             cpar,
-            list(flags),
+            _orient_par_from_flags(flags),
         )
 
         packed = np.array(

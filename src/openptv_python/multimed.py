@@ -16,6 +16,26 @@ from .trafo import _calibration_added_par
 from .vec_utils import vec_norm
 
 
+def _mm_nlay(mm: MultimediaPar) -> int:
+    return int(mm.get_nlay()) if hasattr(mm, "get_nlay") else int(mm.nlay)
+
+
+def _mm_n1(mm: MultimediaPar) -> float:
+    return float(mm.get_n1()) if hasattr(mm, "get_n1") else float(mm.n1)
+
+
+def _mm_n2(mm: MultimediaPar) -> list[float]:
+    return list(mm.get_n2()) if hasattr(mm, "get_n2") else list(mm.n2)
+
+
+def _mm_d(mm: MultimediaPar) -> list[float]:
+    return list(mm.get_d()) if hasattr(mm, "get_d") else list(mm.d)
+
+
+def _mm_n3(mm: MultimediaPar) -> float:
+    return float(mm.get_n3()) if hasattr(mm, "get_n3") else float(mm.n3)
+
+
 def multimed_nlay(
     cal: Calibration, mm: MultimediaPar, pos: np.ndarray
 ) -> Tuple[float, float]:
@@ -32,7 +52,7 @@ def multimed_nlay(
 def multimed_r_nlay(cal: Calibration, mm: MultimediaPar, pos: np.ndarray) -> float:
     """Calculate the radial shift for the multimedia model."""
     # 1-medium case
-    if mm.n1 == 1 and mm.nlay == 1 and mm.n2[0] == 1 and mm.n3 == 1:
+    if _mm_n1(mm) == 1 and _mm_nlay(mm) == 1 and _mm_n2(mm)[0] == 1 and _mm_n3(mm) == 1:
         return 1.0
 
     #  interpolation using the existing mmlut
@@ -44,11 +64,11 @@ def multimed_r_nlay(cal: Calibration, mm: MultimediaPar, pos: np.ndarray) -> flo
             return mmf
 
     mmf = fast_multimed_r_nlay(
-        mm.nlay,
-        mm.n1,
-        np.array(mm.n2),
-        mm.n3,
-        np.array(mm.d),
+        _mm_nlay(mm),
+        _mm_n1(mm),
+        np.array(_mm_n2(mm)),
+        _mm_n3(mm),
+        np.array(_mm_d(mm)),
         cal.ext_par.x0,
         cal.ext_par.y0,
         cal.ext_par.z0,
@@ -117,7 +137,7 @@ def trans_cam_point(
     origin = np.r_[ex.x0, ex.y0, ex.z0]  # type: ignore
     pos = pos.astype(np.float64)
 
-    return fast_trans_cam_point(origin, mm.d[0], glass_dir, pos)
+    return fast_trans_cam_point(origin, _mm_d(mm)[0], glass_dir, pos)
 
 
 @njit(fastmath=True, cache=True, nogil=True)
@@ -176,7 +196,7 @@ def back_trans_point(
     -------
         A numpy array representing the position of the point in the camera coordinate system.
     """
-    return fast_back_trans_point(glass, mm.d[0], cross_c, cross_p, pos_t)
+    return fast_back_trans_point(glass, _mm_d(mm)[0], cross_c, cross_p, pos_t)
 
 
 @njit(fastmath=True, cache=True, nogil=True)
