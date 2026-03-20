@@ -10,6 +10,19 @@ from .parameters import MultimediaPar
 from .trafo import flat_to_dist
 
 
+def _as_python_calibration(cal: Calibration) -> Calibration:
+    if isinstance(cal, Calibration):
+        return cal
+
+    from ._native_convert import from_native_calibration
+
+    converted = from_native_calibration(cal)
+    if not isinstance(converted, Calibration):
+        raise TypeError("Unsupported calibration object")
+
+    return converted
+
+
 def flat_image_coord(
     orig_pos: np.ndarray, cal: Calibration, mm: MultimediaPar
 ) -> Tuple[float, float]:
@@ -27,6 +40,8 @@ def flat_image_coord(
     """
     if orig_pos.shape != (3,):
         raise ValueError("orig_pos must be a 3D vector")
+
+    cal = _as_python_calibration(cal)
 
     cal_t = Calibration(mmlut=cal.mmlut)
 
@@ -76,6 +91,8 @@ def img_coord(
     pos: np.ndarray, cal: Calibration, mm: MultimediaPar
 ) -> Tuple[float, float]:
     """Estimate metric coordinates in image space (mm)."""
+    cal = _as_python_calibration(cal)
+
     # Estimate metric coordinates in image space using flat_image_coord()
     if pos.shape[0] != 3:
         raise ValueError("pos must be a 3D vector")
@@ -95,6 +112,8 @@ def image_coordinates(
     orig_pos: np.ndarray, cal: Calibration, mm: MultimediaPar
 ) -> np.ndarray:
     """Image coordinates in array mode."""
+    cal = _as_python_calibration(cal)
+
     npoints = orig_pos.shape[0]
     out = np.empty((npoints, 2), dtype=float)
 

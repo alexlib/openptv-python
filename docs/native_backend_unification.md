@@ -10,6 +10,20 @@ The important user-facing contract is simple:
 - the same Python calls should work with and without `optv` installed
 - native acceleration is an implementation detail, not a second API surface
 
+## Implementation Checklist
+
+Use this checklist when adding or changing backend routing:
+
+- [ ] Import backend-facing symbols from `pyptv._backend`, not directly from `optv` or `openptv_python`, in pipeline code.
+- [ ] Ensure the active engine is selected through `_native_compat.set_engine()` and queried through `should_use_native(...)` or the backend helper functions.
+- [ ] When `optv` is installed and selected, use the native module objects and native parameter/calibration classes.
+- [ ] When `optv` is missing or disabled, keep the Python/Numba fallback path callable with the same function signatures.
+- [ ] Convert Python objects to native objects at backend boundaries only; do not leak backend-specific types into unrelated code paths.
+- [ ] Convert native objects back to Python objects only when a downstream caller still expects the Python implementation model.
+- [ ] Preserve input and output shapes between backends for detection, correspondences, calibration, reconstruction, and tracking.
+- [ ] Keep a fallback path for calibration routines that fail in the native backend, but make sure the fallback sees the same data model as the native path.
+- [ ] Add or update tests whenever a backend boundary changes so the native and Python paths stay behaviorally aligned.
+
 The runtime flow is:
 
 | Layer | Responsibility |
@@ -93,6 +107,15 @@ The current rollout state is clearer as a status table:
 The important distinction is not whether a native implementation exists. It is
 whether the normal `openptv_python` runtime path already chooses that native
 implementation transparently for the user.
+
+### Contract Rules
+
+- `pyptv._backend` is the only layer that should decide which implementation is active.
+- Public helpers must keep one stable signature, regardless of backend.
+- Backend-specific object construction must stay inside conversion helpers or backend dispatch code.
+- If a native routine expects a native object type, the wrapper must build it before the call.
+- If a fallback routine expects Python dataclasses, the wrapper must convert back before the call.
+- A failed native path may fall back to Python, but only after restoring or rebuilding the input objects the fallback expects.
 
 ## Why `tests/test_native_stress_performance.py` matters
 

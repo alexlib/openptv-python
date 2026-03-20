@@ -11,10 +11,11 @@ from typing import Sequence
 
 import numpy as np
 
-from openptv_python.calibration import Calibration
-from openptv_python.orientation import external_calibration, full_calibration
+from openptv_python._native_compat import should_use_native
 from openptv_python.parameters import OrientPar
-from openptv_python.tracking_frame_buf import TargetArray
+from openptv_python.calibration import Calibration as PythonCalibration
+
+from ._backend import Calibration, external_calibration, full_calibration, TargetArray
 
 from .parameter_manager import ParameterManager
 from . import ptv
@@ -156,14 +157,30 @@ def _select_four_indices(mode: str, n: int) -> np.ndarray:
     raise ValueError(f"Unknown init mode: {mode}")
 
 
+def _select_manual_orientation_indices(pm: ParameterManager, cam: int, n: int) -> np.ndarray:
+    man_ori = pm.parameters.get("man_ori")
+    if isinstance(man_ori, dict):
+        nr = man_ori.get("nr")
+        if isinstance(nr, list) and len(nr) >= (cam + 1) * 4:
+            cam_nr = nr[cam * 4 : cam * 4 + 4]
+            indices = np.asarray([int(idx) - 1 for idx in cam_nr], dtype=int)
+            if np.all((0 <= indices) & (indices < n)):
+                return indices
+
+    return _select_four_indices("first4", n)
+
+
 def _load_or_init_calibration(ori_path: Path) -> Calibration:
-    cal = Calibration()
     addpar_path = Path(str(ori_path).replace(".ori", ".addpar"))
 
     if ori_path.exists() and addpar_path.exists():
-        cal.from_file(str(ori_path), str(addpar_path))
+        if should_use_native("orientation"):
+            cal = Calibration()
+            cal.from_file(str(ori_path), str(addpar_path))
+            return cal
+        return PythonCalibration.from_file(str(ori_path), str(addpar_path))
 
-    return cal
+    return Calibration() if should_use_native("orientation") else PythonCalibration()
 
 
 def run_standalone_calibration(
@@ -206,20 +223,26 @@ def run_standalone_calibration(
         targs = targets_from_xy(xy[cam], pnr)
 
         if init_external is not None:
-            idx4 = _select_four_indices(init_external, len(pnr))
+            if init_external == "first4":
+                idx4 = _select_manual_orientation_indices(pm, cam, len(pnr))
+            else:
+                idx4 = _select_four_indices(init_external, len(pnr))
             sel_xyz = np.asarray(xyz[pnr[idx4]], dtype=float)
             sel_xy = np.asarray(xy[cam][idx4], dtype=float)
 
             ok = external_calibration(cal, sel_xyz, sel_xy, cpar)
             if ok is False:
-                raise RuntimeError(f"external_calibration failed for camera {cam}")
+                print(
+                    f"external_calibration failed for camera {cam}; "
+                    "continuing with the loaded calibration"
+                )
 
         residuals, targ_ix, err_est = full_calibration(
             cal,
             np.asarray(xyz, dtype=float),
             targs,
             cpar,
-            _orient_par_from_flags(flags),
+            list(flags) if should_use_native("orientation") else _orient_par_from_flags(flags),
         )
 
         packed = np.array(
@@ -235,11 +258,11 @@ def run_standalone_calibration(
         if np.any(np.isnan(np.hstack(packed))):
             raise ValueError(f"Calibration for camera {cam} contains NaNs")
 
-        calibrations.append(cal)
-
         if write:
             addpar_path = Path(str(ori_path).replace(".ori", ".addpar"))
             ori_path.parent.mkdir(parents=True, exist_ok=True)
             cal.write(str(ori_path).encode(), str(addpar_path).encode())
+
+        calibrations.append(cal)
 
     return calibrations
