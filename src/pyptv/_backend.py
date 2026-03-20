@@ -10,6 +10,7 @@ from typing import Any
 
 import openptv_python
 from openptv_python._native_compat import (
+    HAS_OPTV,
     get_active_engine,
     get_engine_preference,
     get_engine_reason,
@@ -50,13 +51,22 @@ def _to_openptv_name(name: str) -> str:
 # Module imports with compatibility wrapping
 # =============================================================================
 
-from openptv_python.calibration import Calibration
-from openptv_python.parameters import ControlPar as ControlParams
 from openptv_python.parameters import MultimediaPar
-from openptv_python.parameters import SequencePar as SequenceParams
-from openptv_python.parameters import TargetPar as TargetParams
-from openptv_python.parameters import TrackPar as TrackingParams
-from openptv_python.parameters import VolumePar as VolumeParams
+
+if HAS_OPTV:
+    from optv.calibration import Calibration
+    from optv.parameters import ControlParams
+    from optv.parameters import SequenceParams
+    from optv.parameters import TargetParams
+    from optv.parameters import TrackingParams
+    from optv.parameters import VolumeParams
+else:
+    from openptv_python.calibration import Calibration
+    from openptv_python.parameters import ControlPar as ControlParams
+    from openptv_python.parameters import SequencePar as SequenceParams
+    from openptv_python.parameters import TargetPar as TargetParams
+    from openptv_python.parameters import TrackPar as TrackingParams
+    from openptv_python.parameters import VolumePar as VolumeParams
 from openptv_python.image_processing import preprocess_image
 from openptv_python.segmentation import target_recognition
 from openptv_python.correspondences import (
@@ -116,13 +126,18 @@ def get_backend_status() -> str:
 
 def create_control_params(num_cams: int, **kwargs) -> ControlParams:
     """Create ControlParams with backend-appropriate initialization."""
-    cpar = ControlParams(
-        num_cams=num_cams,
-        img_base_name=["" for _ in range(num_cams)],
-        cal_img_base_name=["" for _ in range(num_cams)],
-        mm=MultimediaPar(),
-    )
+    cpar = ControlParams(num_cams)
     for key, value in kwargs.items():
+        if key == "mm" and hasattr(cpar, "get_multimedia_params"):
+            mm = cpar.get_multimedia_params()
+            if mm is not None and isinstance(value, dict):
+                for mm_key, mm_value in value.items():
+                    setter = getattr(mm, f"set_{mm_key}", None)
+                    if callable(setter):
+                        setter(mm_value)
+                    elif hasattr(mm, mm_key):
+                        setattr(mm, mm_key, mm_value)
+            continue
         if hasattr(cpar, key):
             setattr(cpar, key, value)
     return cpar
@@ -130,7 +145,12 @@ def create_control_params(num_cams: int, **kwargs) -> ControlParams:
 
 def create_sequence_params(num_cams: int, **kwargs) -> SequenceParams:
     """Create SequenceParams with backend-appropriate initialization."""
-    spar = SequenceParams(img_base_name=["" for _ in range(num_cams)])
+    try:
+        spar = SequenceParams(num_cams=num_cams)
+    except TypeError:
+        spar = SequenceParams()
+        if hasattr(spar, "set_img_base_name"):
+            spar.set_img_base_name(["" for _ in range(num_cams)])
 
     for key, value in kwargs.items():
         if hasattr(spar, key):
@@ -160,10 +180,7 @@ def create_volume_params(**kwargs) -> VolumeParams:
 
 def create_target_params(**kwargs) -> TargetParams:
     """Create TargetParams with backend-appropriate initialization."""
-    if BACKEND == "openptv_python":
-        tpar = TargetParams()
-    else:
-        tpar = TargetParams()
+    tpar = TargetParams()
 
     for key, value in kwargs.items():
         if hasattr(tpar, key):

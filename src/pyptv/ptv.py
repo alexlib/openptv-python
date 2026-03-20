@@ -211,12 +211,20 @@ def _populate_spar(seq_params: dict, num_cams: int) -> SequenceParams:
     if len([x for x in base_name_list if x is not None]) < num_cams:
         raise ValueError(f"base_name_list length ({len(base_name_list)}) does not match num_cams ({num_cams})")
 
-    spar = SequenceParams()
+    try:
+        spar = SequenceParams(num_cams=num_cams)
+    except TypeError:
+        spar = SequenceParams()
+        spar.set_img_base_name(["" for _ in range(num_cams)])
     spar.set_first(seq_params['first'])
     spar.set_last(seq_params['last'])
     
     # Set base names for each camera
-    spar.set_img_base_name(base_name_list[:num_cams])
+    try:
+        spar.set_img_base_name(base_name_list[:num_cams])
+    except TypeError:
+        for cam_index, base_name in enumerate(base_name_list[:num_cams]):
+            spar.set_img_base_name(cam_index, base_name)
     
     return spar
 

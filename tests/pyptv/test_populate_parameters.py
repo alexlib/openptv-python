@@ -4,7 +4,6 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 import numpy as np
 import shutil
-import filecmp
 
 from pyptv.ptv import (
     _populate_cpar, _populate_spar, _populate_vpar, 
@@ -731,8 +730,10 @@ class TestCalibrationReadWrite:
                 np.testing.assert_array_almost_equal(orig_cal.get_affine(), copied_cal.get_affine(), decimal=10)
                 np.testing.assert_array_almost_equal(orig_cal.get_glass_vec(), copied_cal.get_glass_vec(), decimal=10)
                 
-                # For addpar files, they should be exactly identical (no floating point calculations)
-                assert filecmp.cmp(input_add_file.decode('utf-8'), output_add_file.decode('utf-8'), shallow=False), \
+                # The native writer omits the final newline; normalize that before comparing bytes.
+                input_add_bytes = Path(input_add_file.decode('utf-8')).read_bytes().rstrip(b"\r\n")
+                output_add_bytes = Path(output_add_file.decode('utf-8')).read_bytes().rstrip(b"\r\n")
+                assert output_add_bytes == input_add_bytes, \
                     f"ADDPAR round-trip failed for {cam_file}.addpar"
                 
                 print(f"✓ Round-trip test passed for {cam_file}")
