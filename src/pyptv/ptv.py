@@ -948,7 +948,7 @@ def py_calibration(selection, exp):
 
 def write_targets(targets: TargetArray, short_file_base: str, frame: int) -> bool:
     """Write targets to a file."""
-    output_path = _prepare_output_path(f"{short_file_base}.{frame:04d}_targets")
+    output_path = _prepare_output_path(_target_filename(short_file_base, frame))
     num_targets = len(targets)
     success = False
     if num_targets == 0:
@@ -1012,7 +1012,7 @@ def write_targets(targets: TargetArray, short_file_base: str, frame: int) -> boo
 
 def read_targets(short_file_base: str, frame: int) -> TargetArray:
     """Read targets from a file."""
-    filename = f"{short_file_base}.{frame:04d}_targets"
+    filename = _target_filename(short_file_base, frame)
     print(f" Reading targets from: filename: {filename}")
 
     if not os.path.exists(filename):
@@ -1041,6 +1041,13 @@ def read_targets(short_file_base: str, frame: int) -> TargetArray:
         raise err
 
     return targs
+
+
+def _target_filename(short_file_base: str, frame: int) -> str:
+    """Resolve a target filename from either a plain base or a legacy %d pattern."""
+    if "%d" in short_file_base:
+        return re.sub(r"%0?\d*d", str(frame), short_file_base) + "_targets"
+    return f"{short_file_base}.{frame:04d}_targets"
 
 
 def extract_cam_ids(file_bases: list[str]) -> list[int]:
