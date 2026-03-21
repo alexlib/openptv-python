@@ -8,8 +8,8 @@ import numpy as np
 import tempfile
 from pathlib import Path
 
-# Import the functions from the original file
-from tests.pyptv.test_calibration import (
+# Import the functions from the sibling test module
+from test_calibration import (
     read_dt_lsq,
     read_calblock,
     pair_cal_points,

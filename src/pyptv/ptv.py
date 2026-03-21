@@ -83,7 +83,7 @@ def _as_text(value: str | bytes) -> str:
     return value.decode() if isinstance(value, bytes) else value
 
 
-def _prepare_output_path(filename: str) -> Path:
+def _prepare_output_path(filename: str | Path) -> Path:
     """Return a writable output path, creating parent directories when needed."""
     output_path = Path(filename)
     parent = output_path.parent
@@ -134,7 +134,7 @@ def _ensure_directory_writable(directory: Path, label: str) -> Path:
     return directory
 
 
-def _ensure_target_output_writable(short_file_bases: List[str]) -> None:
+def _ensure_target_output_writable(short_file_bases: List[str | Path]) -> None:
     """Check target output directories before the first target file write."""
     checked_dirs = set()
 
@@ -946,7 +946,7 @@ def py_calibration(selection, exp):
         return calib_particles(exp)
 
 
-def write_targets(targets: TargetArray, short_file_base: str, frame: int) -> bool:
+def write_targets(targets: TargetArray, short_file_base: str | Path, frame: int) -> bool:
     """Write targets to a file."""
     output_path = _prepare_output_path(_target_filename(short_file_base, frame))
     num_targets = len(targets)
@@ -1010,7 +1010,7 @@ def write_targets(targets: TargetArray, short_file_base: str, frame: int) -> boo
         _raise_output_write_error(output_path, exc)
     return success
 
-def read_targets(short_file_base: str, frame: int) -> TargetArray:
+def read_targets(short_file_base: str | Path, frame: int) -> TargetArray:
     """Read targets from a file."""
     filename = _target_filename(short_file_base, frame)
     print(f" Reading targets from: filename: {filename}")
@@ -1043,8 +1043,9 @@ def read_targets(short_file_base: str, frame: int) -> TargetArray:
     return targs
 
 
-def _target_filename(short_file_base: str, frame: int) -> str:
+def _target_filename(short_file_base: str | Path, frame: int) -> str:
     """Resolve a target filename from either a plain base or a legacy %d pattern."""
+    short_file_base = str(short_file_base)
     if "%d" in short_file_base:
         return re.sub(r"%0?\d*d", str(frame), short_file_base) + "_targets"
     return f"{short_file_base}.{frame:04d}_targets"
