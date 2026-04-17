@@ -47,7 +47,7 @@ class TestReadPathFrame(unittest.TestCase):
         )
 
         # The base name of the correspondence file.
-        file_base = "tests/testing_fodder/rt_is"
+        file_base = "tests/testing_folder/rt_is"
 
         # The frame number.
         frame_num = 818
@@ -78,10 +78,10 @@ class TestReadPathFrame(unittest.TestCase):
         path_buf = [P() for _ in range(POSI)]
 
         # The base name of the linkage file.
-        linkage_base = "tests/testing_fodder/ptv_is"
+        linkage_base = "tests/testing_folder/ptv_is"
 
         # The base name of the prio file.
-        prio_base = "tests/testing_fodder/added"
+        prio_base = "tests/testing_folder/added"
 
         # Read the path frame.
         cor_buf, path_buf = read_path_frame(
@@ -117,7 +117,7 @@ class TestReadPathFrame(unittest.TestCase):
             np.recarray
         )
 
-        file_base = "tests/testing_fodder/rt_is"
+        file_base = "tests/testing_folder/rt_is"
         frame_num = 818
 
         # Test unlinked frame
@@ -141,8 +141,8 @@ class TestReadPathFrame(unittest.TestCase):
         path_correct.prev_frame = 0
         path_correct.next_frame = 0
         path_correct.prio = 0
-        linkage_base = "tests/testing_fodder/ptv_is"
-        prio_base = "tests/testing_fodder/added"
+        linkage_base = "tests/testing_folder/ptv_is"
+        prio_base = "tests/testing_folder/added"
 
         cor_buf, path_buf = read_path_frame(
             file_base, linkage_base, prio_base, frame_num

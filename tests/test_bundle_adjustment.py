@@ -249,7 +249,7 @@ class TestBundleAdjustment(unittest.TestCase):
         self.assertEqual(len(refined_cals), 4)
 
     def test_cavity_reprojection_improves(self):
-        cavity_dir = Path("tests/testing_fodder/test_cavity")
+        cavity_dir = Path("tests/testing_folder/test_cavity")
         control = ControlPar(4).from_file(cavity_dir / "parameters/ptv.par")
         true_cals = [
             read_calibration(
@@ -1703,7 +1703,7 @@ class TestBundleAdjustment(unittest.TestCase):
         np.testing.assert_allclose(final_cals[3].get_pos(), pose_cals[3].get_pos())
 
     def test_cavity_intrinsics_only_improves_from_intrinsic_perturbation(self):
-        cavity_dir = Path("tests/testing_fodder/test_cavity")
+        cavity_dir = Path("tests/testing_folder/test_cavity")
         control = ControlPar(4).from_file(cavity_dir / "parameters/ptv.par")
         true_cals = [
             read_calibration(

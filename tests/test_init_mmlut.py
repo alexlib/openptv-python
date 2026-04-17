@@ -10,7 +10,7 @@ from openptv_python.parameters import read_control_par, read_volume_par
 
 class TestInitMmLut(unittest.TestCase):
     def test_init_mmLUT(self):
-        filepath = Path("tests") / "testing_fodder"
+        filepath = Path("tests") / "testing_folder"
         ori_file = filepath / "cal" / "cam2.tif.ori"
         add_file = filepath / "cal" / "cam2.tif.addpar"
         vol_file = filepath / "parameters" / "criteria.par"

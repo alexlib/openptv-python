@@ -34,8 +34,8 @@ from openptv_python.trafo import dist_to_flat, metric_to_pixel, pixel_to_metric
 
 def read_all_calibration(num_cams: int = 4) -> list[Calibration]:
     """Read all calibration files."""
-    ori_tmpl = "tests/testing_fodder/cal/sym_cam%d.tif.ori"
-    added_name = Path("tests/testing_fodder/cal/cam1.tif.addpar")
+    ori_tmpl = "tests/testing_folder/cal/sym_cam%d.tif.ori"
+    added_name = Path("tests/testing_folder/cal/cam1.tif.addpar")
 
     calib = []
 
@@ -191,8 +191,8 @@ class TestReadControlPar(unittest.TestCase):
 
     def test_full_corresp(self):
         """Full scene correspondences."""
-        cpar = read_control_par(Path("tests/testing_fodder/parameters/ptv.par"))
-        vpar = read_volume_par(Path("tests/testing_fodder/parameters/criteria.par"))
+        cpar = read_control_par(Path("tests/testing_folder/parameters/ptv.par"))
+        vpar = read_volume_par(Path("tests/testing_folder/parameters/criteria.par"))
 
         # Cameras are at so high angles that opposing cameras don't see each other
         # in the normal air-glass-water setting.
@@ -285,8 +285,8 @@ class TestReadControlPar(unittest.TestCase):
 
         two cameras to get 16 pairs.
         """
-        cpar = read_control_par(Path("tests/testing_fodder/parameters/ptv.par"))
-        vpar = read_volume_par(Path("tests/testing_fodder/parameters/criteria.par"))
+        cpar = read_control_par(Path("tests/testing_folder/parameters/ptv.par"))
+        vpar = read_volume_par(Path("tests/testing_folder/parameters/criteria.par"))
 
         cpar.num_cams = 2
         cpar.mm.n2[0] = 1.0001
@@ -345,8 +345,8 @@ class TestReadControlPar(unittest.TestCase):
 
     def test_correspondences(self):
         """Test correspondences function."""
-        cpar = read_control_par(Path("tests/testing_fodder/parameters/ptv.par"))
-        vpar = read_volume_par(Path("tests/testing_fodder/parameters/criteria.par"))
+        cpar = read_control_par(Path("tests/testing_folder/parameters/ptv.par"))
+        vpar = read_volume_par(Path("tests/testing_folder/parameters/criteria.par"))
 
         # Cameras are at so high angles that opposing cameras don't see each other
         # in the normal air-glass-water setting.
@@ -365,8 +365,8 @@ class TestReadControlPar(unittest.TestCase):
     def test_pairwise_matching(self):
         """Test pairwise matching function."""
         cand = 0
-        cpar = read_control_par(Path("tests/testing_fodder/parameters/ptv.par"))
-        vpar = read_volume_par(Path("tests/testing_fodder/parameters/criteria.par"))
+        cpar = read_control_par(Path("tests/testing_folder/parameters/ptv.par"))
+        vpar = read_volume_par(Path("tests/testing_folder/parameters/criteria.par"))
 
         # /* Cameras are at so high angles that opposing cameras don't see each other
         #    in the normal air-glass-water setting. */
@@ -414,8 +414,8 @@ class TestReadControlPar(unittest.TestCase):
 
     def test_three_camera_matching(self):
         """Test three camera matching function."""
-        cpar = read_control_par(Path("tests/testing_fodder/parameters/ptv.par"))
-        vpar = read_volume_par(Path("tests/testing_fodder/parameters/criteria.par"))
+        cpar = read_control_par(Path("tests/testing_folder/parameters/ptv.par"))
+        vpar = read_volume_par(Path("tests/testing_folder/parameters/criteria.par"))
 
         cpar.mm.n2[0] = 1.0001
         cpar.mm.n3 = 1.0001
@@ -450,8 +450,8 @@ class TestReadControlPar(unittest.TestCase):
 
     def test_four_camera_matching(self):
         """Test four camera matching function."""
-        cpar = read_control_par(Path("tests/testing_fodder/parameters/ptv.par"))
-        vpar = read_volume_par(Path("tests/testing_fodder/parameters/criteria.par"))
+        cpar = read_control_par(Path("tests/testing_folder/parameters/ptv.par"))
+        vpar = read_volume_par(Path("tests/testing_folder/parameters/criteria.par"))
 
         cpar.mm.n2[0] = 1.0001
         cpar.mm.n3 = 1.0001

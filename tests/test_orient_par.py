@@ -9,7 +9,7 @@ class TestOrientationParameters(unittest.TestCase):
 
     def setUp(self):
         # Create a temporary file for testing
-        self.temp_file = "tests/testing_fodder/parameters/orient.par"
+        self.temp_file = "tests/testing_folder/parameters/orient.par"
 
     def test_read_from_file(self):
         """Read from file."""

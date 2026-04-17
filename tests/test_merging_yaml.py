@@ -30,8 +30,8 @@ par_dict = {
 # print(par_dict)
 
 # Define the directory containing the .par files
-directory_path = pathlib.Path("tests/testing_fodder/parameters")
-output_yaml_file = "tests/testing_fodder/parameters/merged_parameters.yaml"
+directory_path = pathlib.Path("tests/testing_folder/parameters")
+output_yaml_file = "tests/testing_folder/parameters/merged_parameters.yaml"
 
 # Initialize an empty dictionary to store the merged data
 merged_data = {}

@@ -337,7 +337,7 @@ def _write_synthetic_tracking_fixture(
     add_distractor: bool = True,
 ) -> list[Calibration]:
     """Write a clean deterministic tracking fixture into a temporary workspace."""
-    source = Path(__file__).resolve().parent / "testing_fodder"
+    source = Path(__file__).resolve().parent / "testing_folder"
     if not source.exists():
         raise FileNotFoundError(f"Missing test fixture directory: {source}")
     shutil.copytree(source, workdir)
@@ -488,7 +488,7 @@ def _run_python_tracking_snapshot(
 ) -> TrackingSnapshotResult:
     """Run the Python tracker in either compiled or patched-Python mode."""
     with tempfile.TemporaryDirectory() as tmp_dir:
-        workdir = Path(tmp_dir) / "testing_fodder"
+        workdir = Path(tmp_dir) / "testing_folder"
         original_cwd = Path.cwd()
         try:
             calibrations = _write_synthetic_tracking_fixture(
@@ -565,7 +565,7 @@ def _run_native_tracking_snapshot(
         raise RuntimeError("optv Tracker is not available")
 
     with tempfile.TemporaryDirectory() as tmp_dir:
-        workdir = Path(tmp_dir) / "testing_fodder"
+        workdir = Path(tmp_dir) / "testing_folder"
         original_cwd = Path.cwd()
         try:
             calibrations = _write_synthetic_tracking_fixture(

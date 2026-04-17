@@ -89,7 +89,7 @@ class TestTrackCorrNoAdd(unittest.TestCase):
 
         current_directory = Path.cwd()
         print(f"working from {current_directory}")
-        directory = Path("tests/testing_fodder/track")
+        directory = Path("tests/testing_folder/track")
 
         os.chdir(directory)
 
@@ -159,7 +159,7 @@ class TestTrackCorrNoAdd(unittest.TestCase):
 
         current_directory = Path.cwd()
         print(f"working from {current_directory}")
-        directory = Path("tests/testing_fodder/track")
+        directory = Path("tests/testing_folder/track")
 
         os.chdir(directory)
 
@@ -233,7 +233,7 @@ class TestTrackback(unittest.TestCase):
         """Test tracking with adding particles."""
         current_directory = Path.cwd()
         print(f"working from {current_directory}")
-        directory = Path("tests/testing_fodder/track")
+        directory = Path("tests/testing_folder/track")
 
         os.chdir(directory)
 
@@ -326,7 +326,7 @@ class TestNewParticle(unittest.TestCase):
         current_directory = Path.cwd()
         print(f"working from {current_directory}")
 
-        os.chdir("tests/testing_fodder/")
+        os.chdir("tests/testing_folder/")
         # print(os.path.abspath(os.curdir))
 
         # Set up all scene parameters to track one specially-contrived trajectory.

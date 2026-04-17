@@ -9,7 +9,7 @@ The repository currently exposes two related calibration-refinement workflows:
 1. `multi_camera_bundle_adjustment`: jointly refine camera parameters and optionally 3D points by minimizing reprojection error.
 1. `guarded_two_step_bundle_adjustment`: run a pose-focused bundle-adjustment stage first, then a tightly constrained intrinsic stage, and reject the second stage if it makes the solution worse.
 
-The demo module compares several configurations on a case folder such as `tests/testing_fodder/test_cavity` and can write one updated calibration folder per experiment.
+The demo module compares several configurations on a case folder such as `tests/testing_folder/test_cavity` and can write one updated calibration folder per experiment.
 
 ## Case Layout
 
@@ -31,7 +31,7 @@ case_dir/
     ...
 ```
 
-This is the same layout used by `tests/testing_fodder/test_cavity`.
+This is the same layout used by `tests/testing_folder/test_cavity`.
 
 ## Objective Function
 
@@ -145,7 +145,7 @@ The demo entry point is:
 python -m openptv_python.demo_bundle_adjustment
 ```
 
-By default it uses `tests/testing_fodder/test_cavity`, writes results into `tmp/bundle_adjustment_demo`, and evaluates several presets.
+By default it uses `tests/testing_folder/test_cavity`, writes results into `tmp/bundle_adjustment_demo`, and evaluates several presets.
 
 ### Demo Options
 
@@ -213,7 +213,7 @@ Larger comparison on `test_cavity`:
 
 ```bash
 python -m openptv_python.demo_bundle_adjustment \
-  tests/testing_fodder/test_cavity \
+  tests/testing_folder/test_cavity \
   --max-frames 2 \
   --max-points-per-frame 80 \
   --known-points 12 \
@@ -225,7 +225,7 @@ Run the same case but disable automatic geometry blocking if you intentionally w
 
 ```bash
 python -m openptv_python.demo_bundle_adjustment \
-  tests/testing_fodder/test_cavity \
+  tests/testing_folder/test_cavity \
   --max-frames 2 \
   --max-points-per-frame 80 \
   --known-points 12 \
@@ -239,7 +239,7 @@ Keep export blocking but switch guarded acceptance to a softer monotonic geometr
 
 ```bash
 python -m openptv_python.demo_bundle_adjustment \
-  tests/testing_fodder/test_cavity \
+  tests/testing_folder/test_cavity \
   --max-frames 2 \
   --max-points-per-frame 80 \
   --geometry-guard-mode soft \
@@ -251,7 +251,7 @@ Keep geometry blocking but also enforce a hard correspondence replacement limit 
 
 ```bash
 python -m openptv_python.demo_bundle_adjustment \
-  tests/testing_fodder/test_cavity \
+  tests/testing_folder/test_cavity \
   --max-frames 2 \
   --max-points-per-frame 80 \
   --correspondence-guard-mode auto \
@@ -274,7 +274,7 @@ Sweep all two-camera anchor pairs for the guarded solver:
 
 ```bash
 python -m openptv_python.demo_bundle_adjustment \
-  tests/testing_fodder/test_cavity \
+  tests/testing_folder/test_cavity \
   --max-frames 2 \
   --max-points-per-frame 80 \
   --known-points 12 \
@@ -288,7 +288,7 @@ Compare epipolar consistency and quadruplet sensitivity before and after one gua
 
 ```bash
 python -m openptv_python.demo_bundle_adjustment \
-  tests/testing_fodder/test_cavity \
+  tests/testing_folder/test_cavity \
   --max-frames 2 \
   --max-points-per-frame 80 \
   --known-points 12 \

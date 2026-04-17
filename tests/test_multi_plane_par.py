@@ -11,7 +11,7 @@ class TestMultiPlanesParameters(unittest.TestCase):
     def setUp(self):
         """Set up."""
         # Create a temporary file for testing
-        self.temp_file = "tests/testing_fodder/parameters/multi_planes.par"
+        self.temp_file = "tests/testing_folder/parameters/multi_planes.par"
 
     def test_read_from_file(self):
         """Read from file."""

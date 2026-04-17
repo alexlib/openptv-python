@@ -33,18 +33,18 @@ class TestSortgrid(unittest.TestCase):
 
     def test_read_sortgrid_par(self):
         """Test reading sortgrid.par file."""
-        eps = read_sortgrid_par("tests/testing_fodder/parameters/sortgrid.par")
+        eps = read_sortgrid_par("tests/testing_folder/parameters/sortgrid.par")
         self.assertEqual(eps, 25)
 
         eps = read_sortgrid_par(
-            "tests/testing_fodder/parameters/sortgrid_corrupted.par"
+            "tests/testing_folder/parameters/sortgrid_corrupted.par"
         )
         self.assertEqual(eps, SORTGRID_EPS)
 
     def test_read_calblock(self):
         """Test reading calblock.txt file."""
         correct_num_points = 5
-        calblock_file = Path("tests/testing_fodder/cal/calblock.txt")
+        calblock_file = Path("tests/testing_folder/cal/calblock.txt")
 
         # with self.assertRaises(FileNotFoundError):
         assert calblock_file.exists()
@@ -56,11 +56,11 @@ class TestSortgrid(unittest.TestCase):
         """Test sorting the grid points according to the image coordinates."""
         nfix, eps, correct_eps = 5, 25, 25
 
-        test_path = Path("tests") / "testing_fodder"
+        test_path = Path("tests") / "testing_folder"
         eps = read_sortgrid_par(test_path / "parameters" / "sortgrid.par")
         self.assertEqual(eps, correct_eps)
 
-        file_base = "tests/testing_fodder/sample_%04d"
+        file_base = "tests/testing_folder/sample_%04d"
         frame_num = 42
 
         targets = read_targets(file_base, frame_num)

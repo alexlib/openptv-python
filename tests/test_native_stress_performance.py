@@ -240,15 +240,15 @@ def _build_stereomatching_stress_case(
     spacing: float = 5.0,
 ):
     """Build a deterministic multi-camera correspondence workload."""
-    cpar = read_control_par(Path("tests/testing_fodder/parameters/ptv.par"))
-    vpar = read_volume_par(Path("tests/testing_fodder/parameters/criteria.par"))
+    cpar = read_control_par(Path("tests/testing_folder/parameters/ptv.par"))
+    vpar = read_volume_par(Path("tests/testing_folder/parameters/criteria.par"))
     cpar.mm.n2[0] = 1.0001
     cpar.mm.n3 = 1.0001
 
     calibs = [
         Calibration().from_file(
-            ori_file=Path(f"tests/testing_fodder/cal/sym_cam{cam_num}.tif.ori"),
-            add_file=Path("tests/testing_fodder/cal/cam1.tif.addpar"),
+            ori_file=Path(f"tests/testing_folder/cal/sym_cam{cam_num}.tif.ori"),
+            add_file=Path("tests/testing_folder/cal/cam1.tif.addpar"),
         )
         for cam_num in range(1, cpar.num_cams + 1)
     ]
@@ -388,7 +388,7 @@ def _snapshot_text_outputs(root: Path) -> dict[str, tuple[int, str]]:
 
 def _run_python_tracking_fixture() -> dict[str, tuple[int, str]]:
     """Execute the Python tracking loop in a temporary fixture directory."""
-    source = Path("tests/testing_fodder/track")
+    source = Path("tests/testing_folder/track")
     with tempfile.TemporaryDirectory() as tmp_dir:
         workdir = Path(tmp_dir) / "track"
         shutil.copytree(source, workdir)
@@ -434,7 +434,7 @@ def _run_native_tracking_fixture() -> dict[str, tuple[int, str]]:
     ):
         raise RuntimeError("optv Tracker is not available")
 
-    source = Path("tests/testing_fodder/track")
+    source = Path("tests/testing_folder/track")
     with tempfile.TemporaryDirectory() as tmp_dir:
         workdir = Path(tmp_dir) / "track"
         shutil.copytree(source, workdir)

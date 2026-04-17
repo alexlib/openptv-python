@@ -30,8 +30,8 @@ from .tracking_frame_buf import (
 )
 from .trafo import arr_metric_to_pixel
 
-DEFAULT_SOURCE_CASE = Path("tests/testing_fodder/test_cavity")
-DEFAULT_OUTPUT_CASE = Path("tests/testing_fodder/test_cavity_synthetic")
+DEFAULT_SOURCE_CASE = Path("tests/testing_folder/test_cavity")
+DEFAULT_OUTPUT_CASE = Path("tests/testing_folder/test_cavity_synthetic")
 DEFAULT_SEED = 20260306
 FRAME_NUMBERS = (10001, 10002)
 

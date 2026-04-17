@@ -67,7 +67,7 @@ class TestCavity(unittest.TestCase):
     def test_cavity(self):
         current_directory = Path.cwd()
         print(f"working from {current_directory}")
-        directory = Path("tests/testing_fodder/test_cavity")
+        directory = Path("tests/testing_folder/test_cavity")
 
         os.chdir(directory)
 
