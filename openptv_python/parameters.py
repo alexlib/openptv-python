@@ -411,9 +411,14 @@ class VolumePar(Parameters):
             x_lay.append(float(f.readline()))
             z_min_lay.append(float(f.readline()))
             z_max_lay.append(float(f.readline()))
-            cnx, cny, cn, csumg, corrmin, eps0 = [float(f.readline()) for _ in range(6)]
-
-        return cls(x_lay, z_min_lay, z_max_lay, cn, cnx, cny, csumg, eps0, corrmin)
+            cnx = float(f.readline())
+            cny = float(f.readline())
+            cn = float(f.readline())
+            csumg = float(f.readline())
+            corrmin = float(f.readline())
+            eps0 = float(f.readline())
+        # Fix: assign cn, cnx, cny, csumg, corrmin, eps0 in the correct order
+        return cls(x_lay, z_min_lay, z_max_lay, cn, cnx, cny, csumg, corrmin, eps0)
 
 
 def read_volume_par(filename: Path) -> VolumePar:

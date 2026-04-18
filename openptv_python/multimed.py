@@ -441,8 +441,14 @@ def volumedimension(
                 if Y < ymin:
                     ymin = Y
 
-                X = pos[0] + (z_max - pos[2]) * a[0] / a[2]
-                Y = pos[1] + (z_max - pos[2]) * a[1] / a[2]
+                if a[2] == 0:
+                    print(f"[DEBUG] Parallel ray detected: cam={i_cam}, pixel=({xc[i]}, {yc[j]}), x={x}, y={y}, pos={pos}, a={a}")
+                    X = float('inf')
+                    Y = float('inf')
+                    # Optionally, log or warn here
+                else:
+                    X = pos[0] + (z_max - pos[2]) * a[0] / a[2]
+                    Y = pos[1] + (z_max - pos[2]) * a[1] / a[2]
 
                 if X > xmax:
                     xmax = X

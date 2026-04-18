@@ -166,28 +166,28 @@ def read_targets(file_base: str, frame_num: int) -> List[Target]:
     """Read targets from a file."""
     buffer = []
 
-    # # if file_base has an extension, remove it
-    # file_base = file_base.split(".")[0]
-
     if frame_num > 0:
-        # filename = f"{file_base}{frame_num:04d}_targets"
         fname = file_base % frame_num + "_targets"
     else:
         fname = f"{file_base}_targets"
 
     filename = Path(fname)
-    print(f" filename: {filename}")
+    print(f"[DEBUG] read_targets: file_base={file_base}, frame_num={frame_num}, filename={filename}")
+    print(f"[DEBUG] File exists: {filename.exists()}")
+    if filename.exists():
+        with open(filename, "r", encoding="utf-8") as file:
+            lines = file.readlines()
+            print(f"[DEBUG] File contents (first 5 lines): {lines[:5]}")
+    else:
+        print(f"[DEBUG] File {filename} does not exist!")
 
     try:
         with open(filename, "r", encoding="utf-8") as file:
             num_targets = int(file.readline().strip())
-
             for _ in range(num_targets):
                 line = file.readline().strip().split()
-
                 if len(line) != 8:
                     raise ValueError(f"Bad format for file: {filename}")
-
                 targ = Target(
                     pnr=int(line[0]),
                     x=float(line[1]),
@@ -198,14 +198,9 @@ def read_targets(file_base: str, frame_num: int) -> List[Target]:
                     sumg=int(line[6]),
                     tnr=int(line[7]),
                 )
-
                 buffer.append(targ)
-
     except IOError as err:
-        print(f"Can't open ascii file: {filename}")
-        raise err
-
-    # print(f" read {len(buffer)} targets from {filename}")
+        print(f"[DEBUG] Can't open ascii file: {filename}")
     return buffer
 
 
@@ -341,22 +336,24 @@ class Frame:
         frame_num: int,
     ) -> bool:
         """Read a frame from the disk."""
-        required_files = [Path(f"{corres_file_base}.{frame_num}")]
 
+        required_files = [Path(f"{corres_file_base}.{frame_num}")]
         if linkage_file_base != "":
             required_files.append(Path(f"{linkage_file_base}.{frame_num}"))
-
         if prio_file_base != "":
             required_files.append(Path(f"{prio_file_base}.{frame_num}"))
-
         for file_base in target_file_base:
             if frame_num > 0:
                 required_files.append(Path(file_base % frame_num + "_targets"))
             else:
                 required_files.append(Path(f"{file_base}_targets"))
 
+        print("[DEBUG] Frame.read: Checking required files for frame_num=", frame_num)
+        for path in required_files:
+            print(f"[DEBUG] Required file: {path} exists: {path.exists()}")
         for path in required_files:
             if not path.exists():
+                print(f"[DEBUG] MISSING FILE: {path}")
                 return False
 
         cor_buf, path_buf = read_path_frame(
@@ -635,9 +632,15 @@ class FrameBuf(FrameBufBase):
 
     def read_frame_at_end(self, frame_num: int, read_links: bool = False) -> None:
         """Read a frame from the disk and add it to the end of the buffer."""
+        print(f"[DEBUG] read_frame_at_end: frame_num={frame_num}, read_links={read_links}")
+        print(f"[DEBUG] target_file_base: {self.target_file_base}")
+        print(f"[DEBUG] corres_file_base: {self.corres_file_base}")
+        print(f"[DEBUG] linkage_file_base: {self.linkage_file_base}")
+        print(f"[DEBUG] prio_file_base: {self.prio_file_base}")
         frame = self.buf[-1]  # last frame
 
         if read_links:
+            print("[DEBUG] Calling frame.read with links")
             success = frame.read(
                 self.corres_file_base,
                 self.linkage_file_base,
@@ -646,11 +649,14 @@ class FrameBuf(FrameBufBase):
                 frame_num,
             )
         else:
+            print("[DEBUG] Calling frame.read without links")
             success = frame.read(
                 self.corres_file_base, "", "", self.target_file_base, frame_num
             )
 
+        print(f"[DEBUG] frame.read returned: {success}")
         if not success:
+            print(f"[DEBUG] Could not read frame {frame_num} from disk. Check file paths above.")
             raise IOError("Could not read frame from disk")
 
     def disk_read_frame_at_end(self, frame_num: int, read_links: bool):
@@ -732,9 +738,8 @@ def read_path_frame(
         *
         * Returns:
         * The number of points read for this frame. -1 on failure.
-    */
-
     """
+
     fname = f"{corres_file_base}.{frame_num}"
     # print(fname)
 

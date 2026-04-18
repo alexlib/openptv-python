@@ -442,10 +442,7 @@ def read_ori(ori_file: Path, add_file: Path) -> Calibration:
     -------
     - ext_par, int_par, glass, addp: Calibration object parts without multimedia lookup table.
     """
-    ret = Calibration()
-    ret.from_file(ori_file, add_file)
-
-    return ret
+    return Calibration.from_file(ori_file, add_file)
 
 
 def compare_exterior(e1: np.recarray, e2: np.recarray) -> bool:
