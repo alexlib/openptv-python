@@ -473,3 +473,4 @@ $RECYCLE.BIN/
 .cruft.json
 /.tmp
 /tmp
+uv.lock
